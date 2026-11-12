@@ -3,7 +3,7 @@
    - التحديث: عند الاتصال يُفحص sw.js تلقائيًا؛ إذا تغيّر (غيّر VERSION) يُجهَّز الإصدار الجديد
      في الانتظار، وتظهر للمستخدم رسالة التحديث. لا يتفعّل إلا عند ضغط زر التحديث (SKIP_WAITING)
    - بيانات الفواتير في LocalStorage/IndexedDB وليست في الكاش، فلا تتأثر بأي تحديث */
-const VERSION = 'v3.1.3';
+const VERSION = 'v3.1.4';
 const PREFIX = 'ahmed-saeed-cashier-';
 const CACHE = PREFIX + VERSION;
 const CORE = [
