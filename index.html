@@ -607,6 +607,7 @@ html.lite #loginGate svg.hand.en text{fill:var(--pri2);stroke-width:2.2}
 #updBar #updBtn{width:100%;padding:13px 16px;font-size:15.5px;border-radius:16px;animation:updglow 2.4s ease-in-out infinite}
 #updBar .x{position:absolute;top:10px;inset-inline-start:10px;background:var(--tile,rgba(0,0,0,.06))}
 @media(max-width:620px){#updBar{flex-wrap:nowrap;border-radius:26px}}
+.kp.kd b{color:var(--ok);-webkit-text-fill-color:var(--ok);background:none}
 
 </style>
 </head>
@@ -650,6 +651,8 @@ html.lite #loginGate svg.hand.en text{fill:var(--pri2);stroke-width:2.2}
         <div class="kpis">
           <div class="kp"><small>فواتير الوردية</small><b class="num" id="stN">0</b></div>
           <div class="kp"><small>إجمالي الوردية</small><b class="num" id="stT">0</b></div>
+          <div class="kp"><small>إجمالي التحويلات</small><b class="num" id="stX">0</b></div>
+          <div class="kp kd"><small>نقدية الدرج</small><b class="num" id="stD">0</b></div>
         </div>
       </div>
       <div class="hero-grid">
@@ -1166,7 +1169,7 @@ function renderXfer() {
   const ms = S.payMethods.filter(m => m.on && m.kind === 'transfer');
   $('#xferList').innerHTML = ms.length ? ms.map(m => `<div class="xfer"><span class="pi">${ic(payIcon(m))}</span><div style="min-width:0"><b>${esc(m.name)}</b><div class="no num">${m.number ? esc(m.number) : '<span style="color:var(--mut);font-size:12px;font-family:var(--font)">لم يُسجَّل رقم</span>'}</div></div>${m.number ? `<button class="btn sm ic" data-copy="${esc(m.number)}" title="نسخ الرقم">${ic('copy')}</button>` : ''}</div>`).join('') : '<div class="empty" style="padding:14px">لا توجد طرق تحويل مفعّلة</div>';
 }
-function renderStats() { updateBranchUI(); const o = openInvoices(); $('#stN').textContent = o.length; $('#stT').textContent = money(sum(o, 'total')); }
+function renderStats() { updateBranchUI(); const o = openInvoices(); $('#stN').textContent = o.length; $('#stT').textContent = money(sum(o, 'total')); const out = cashOut(openMoves()); $('#stX').textContent = money(r2(Object.values(byMethod(o)).filter(x => x.kind !== 'cash').reduce((a, x) => a + x.amt, 0))); $('#stD').textContent = money(r2(sum(o, 'total') - out)); $('#stD').parentElement.title = 'إجمالي الوردية ' + money(sum(o, 'total')) + ' − مصروفات ومسحوبات ' + money(out); }
 
 /* ----- drawer ----- */
 let dTab = 's', dPinned = false, dTimer = null;
@@ -2054,13 +2057,13 @@ function pnl(f, t) {
   const pays = S.payouts.filter(p => p.ts >= startOf(f) && p.ts <= endOf(t) && (!repBranch || (p.branch || MAIN) === repBranch));
   const revenue = r2(sum(invs, 'total')), expT = r2(sum(ex, 'amt')), woT = r2(sum(wd, 'amt')), boT = r2(sum(bo, 'amt')), ded = r2(sum(pays, 'deduction'));
   cogs = r2(cogs); shares = r2(shares);
-  const net = r2(revenue - cogs - shares - boT - expT + ded);
-  return { invs, ex, wd, bo, pays, pr, revenue, svc: r2(svc), prod: r2(prod), cogs, shares, boT, expT, woT, ded, net, grossProd: r2(prod - cogs), payable: r2(shares + boT - woT - ded), heads, units, disc: r2(sum(invs, 'disc')), cnt: invs.length };
+  const xfer = r2(Object.values(byMethod(invs)).filter(x => x.kind !== 'cash').reduce((a, x) => a + x.amt, 0)), net = r2(revenue - cogs - shares - boT - expT + ded), drawer = r2(revenue - expT - woT);
+  return { invs, ex, wd, bo, pays, pr, drawer, xfer, revenue, svc: r2(svc), prod: r2(prod), cogs, shares, boT, expT, woT, ded, net, grossProd: r2(prod - cogs), payable: r2(shares + boT - woT - ded), heads, units, disc: r2(sum(invs, 'disc')), cnt: invs.length };
 }
 function pnlTiles(P) {
   return `<div class="grid3" style="margin-bottom:14px">${tile('إجمالي الإيراد', cur(P.revenue), 'coins')}${tile('تكلفة المنتجات المباعة', cur(P.cogs), 'package', P.cogs ? 'neg' : '')}${tile('نصيب الصنايعية', cur(P.shares), 'users', P.shares ? 'neg' : '')}
     ${tile('الزيادات للصنايعية', cur(P.boT), 'gift', P.boT ? 'neg' : '')}${tile('مصروفات المحل', cur(P.expT), 'receipt', P.expT ? 'neg' : '')}${tile('مسحوبات الصنايعية', cur(P.woT), 'hand-coins')}
-    ${tile('خصومات على الصنايعية', cur(P.ded), 'circle-minus')}${tile('ربح المنتجات', cur(P.grossProd), 'shopping-bag', P.grossProd > 0 ? 'pos' : '')}${tile('صافي الربح', cur(P.net), 'trending-up', P.net > 0 ? 'pos big' : P.net < 0 ? 'neg big' : 'big')}</div>`;
+    ${tile('خصومات على الصنايعية', cur(P.ded), 'circle-minus')}${tile('ربح المنتجات', cur(P.grossProd), 'shopping-bag', P.grossProd > 0 ? 'pos' : '')}${tile('نقدية الدرج', cur(P.drawer), 'banknote', 'pos')}${tile('إجمالي التحويلات', cur(P.xfer), 'smartphone')}${tile('صافي الربح', cur(P.net), 'trending-up', P.net > 0 ? 'pos big' : P.net < 0 ? 'neg big' : 'big')}</div>`;
 }
 const pnlRows = P => [
   ['إجمالي الإيراد (كل ما دخل من فواتير الخدمات والمنتجات)', P.revenue, 0],
@@ -2114,6 +2117,7 @@ function buildFull() {
   const html = a4HTML({ title: 'كشف الحساب الشامل', info: [['الفترة', `<span class="ltr num">${periodTxt(r)}</span>`], ['الفرع', esc(brn)], ['عدد الفواتير', `<span class="num">${P.cnt}</span>`], ['عدد الرؤوس', `<span class="num">${P.heads}</span>`]],
     sum: [['إجمالي الإيراد', cur(P.revenue)], ['المصروفات', cur(P.expT)], ['مستحقات الصنايعية', cur(P.shares)], ['صافي الربح', cur(P.net), 1]],
     body: `<h3 class="sec">من الإيراد إلى صافي الربح</h3>${a4Table(['البند', 'المبلغ'], pnlRows(P).map(x => [x[2] === 1 ? `<b>${x[0]}</b>` : x[0], x[2] === 1 ? `<b>${money(x[1])}</b>` : money(x[1])]))}
+      <h3 class="sec">نقدية الدرج (للتسليم)</h3>${a4Table(['البند', 'المبلغ'], [['إجمالي الإيراد', money(P.revenue)], ['يُخصم: مصروفات المحل', '- ' + money(P.expT)], ['يُخصم: مسحوبات الصنايعية', '- ' + money(P.woT)], ['<b>نقدية الدرج</b>', `<b>${money(P.drawer)}</b>`], ['إجمالي التحويلات (فودافون كاش / إنستا باي) — ليست في الدرج', money(P.xfer)]])}<div class="note" style="margin-top:6px">من الإيراد: نقدي ${money(r2(Object.values(pm).filter(x => x.kind === 'cash').reduce((a, x) => a + x.amt, 0)))} ج.م وتحويلات ${money(r2(Object.values(pm).filter(x => x.kind !== 'cash').reduce((a, x) => a + x.amt, 0)))} ج.م.</div>
       <div class="note" style="margin-top:6px">مسحوبات الصنايعية (${money(P.woT)} ج.م) سُلَف من حساب الصنايعية وتُخصم من مستحقاتهم عند المحاسبة، لذلك لا تُخصم من الربح مرتين. صافي ما يُستحق للصنايعية بعد الزيادات والمسحوبات والخصومات: <b>${money(P.payable)} ج.م</b>.</div>
       <h3 class="sec">مصروفات المحل بالأسباب</h3>${moveTable(P.ex, false)}
       <h3 class="sec">مسحوبات الصنايعية بالأسباب</h3>${moveTable(P.wd, true)}
