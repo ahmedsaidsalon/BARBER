@@ -888,8 +888,8 @@ function hydrate(raw) {
 }
 
 /* ---------- Security store (منفصل عن البيانات، لا يدخل النسخ الاحتياطي) ---------- */
-let SEC = { hash: '', salt: '', type: 'num', it: 120000, fails: 0, lockUntil: 0, lastLogin: 0, prevLogin: 0, unseen: 0, log: [] };
-function saveSec() { const t = JSON.stringify(SEC); try { localStorage.setItem(SKEY, t); } catch (e) {} idbPut(SKEY, t); }
+let SEC = { pts: 0, hash: '', salt: '', type: 'num', it: 120000, fails: 0, lockUntil: 0, lastLogin: 0, prevLogin: 0, unseen: 0, log: [] };
+function saveSec() { const t = JSON.stringify(SEC); try { localStorage.setItem(SKEY, t); } catch (e) {} idbPut(SKEY, t); if (typeof clSecPush === 'function') clSecPush(); }
 function slog(type, note) { const en = { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), t: Date.now(), type, note }; SEC.log.push(en); if (typeof clLog === 'function') clLog(en); if (SEC.log.length > 400) SEC.log.splice(0, SEC.log.length - 400); saveSec(); }
 async function loadAll() {
   idb = await idbOpen();
@@ -923,7 +923,7 @@ async function checkPw(pw) {
   if (SEC.fails >= MAX_FAILS) { SEC.lockUntil = Date.now() + LOCK_MIN * 60000; SEC.fails = 0; slog('lock', `تم تعليق الدخول ${LOCK_MIN} دقائق بعد ${MAX_FAILS} محاولات خاطئة`); }
   saveSec(); return { ok: false, left: MAX_FAILS - SEC.fails, locked: lockedOut() };
 }
-async function setPw(pw, type) { SEC.salt = newSalt(); SEC.it = 120000; SEC.type = type; SEC.hash = await hashPw(pw, SEC.salt, SEC.it); SEC.fails = 0; SEC.lockUntil = 0; saveSec(); }
+async function setPw(pw, type) { SEC.pts = Date.now(); SEC.salt = newSalt(); SEC.it = 120000; SEC.type = type; SEC.hash = await hashPw(pw, SEC.salt, SEC.it); SEC.fails = 0; SEC.lockUntil = 0; saveSec(); }
 
 /* ---------- Business helpers ---------- */
 const barberName = id => (S.barbers.find(b => b.id === id) || {}).name || '—';
@@ -1400,7 +1400,7 @@ function pwForm(mode) {
 async function deletePw() {
   if (!(await requireAuth('أدخل كلمة المرور الحالية لحذفها'))) return;
   if (!(await confirmBox({ title: 'حذف كلمة المرور', body: 'بعد الحذف ستُفتح التقارير والإعدادات لأي شخص على هذا الجهاز. هل أنت متأكد؟', ok: 'حذف كلمة المرور', danger: true }))) return;
-  SEC.hash = ''; SEC.salt = ''; SEC.fails = 0; SEC.lockUntil = 0; slog('pwdel', 'تم حذف كلمة المرور'); saveSec(); unlocked = true; $('#mgrLock').classList.add('hidden'); toast('تم حذف كلمة المرور'); renderMgr();
+  SEC.pts = Date.now(); SEC.hash = ''; SEC.salt = ''; SEC.fails = 0; SEC.lockUntil = 0; slog('pwdel', 'تم حذف كلمة المرور'); saveSec(); unlocked = true; $('#mgrLock').classList.add('hidden'); toast('تم حذف كلمة المرور'); renderMgr();
 }
 
 /* ---------- Manager area (Reports + Settings) ---------- */
@@ -2268,7 +2268,14 @@ async function clStart() {
       clSet('ok'); clSchedule(800);
     }, onErr));
   });
-  logQ.forEach(en => { if (!SEC.log.some(l => l.id === en.id)) { /* موجود محلياً */ } }); clLogFlush();
+  clLogFlush();
+  /* كلمة مرور المدير: تتزامن بين الأجهزة كبصمة مشفّرة (PBKDF2 + salt) وليس كنص صريح */
+  clUnsubs.push(F.onSnapshot(F.doc(db, 'salons', 'main', 'meta', 'sec'), snap => {
+    if (!snap.exists()) { clSecPush(true); return; }
+    const d = snap.data(); if (snap.metadata.hasPendingWrites) return;
+    if ((d.pts || 0) > (SEC.pts || 0)) { SEC.hash = d.hash || ''; SEC.salt = d.salt || ''; SEC.type = d.type || 'num'; SEC.it = d.it || 120000; SEC.pts = d.pts; SEC.fails = 0; SEC.lockUntil = 0; CL.spts = d.pts; lsSet('as_cl_spts', CL.spts); saveSec(); try { updateLockUI(); } catch (e) {} }
+    else CL.spts = Math.max(CL.spts, d.pts || 0);
+  }, () => {}));
   /* استرجاع سجل الأمان من السحابة لو اتمسح محلياً */
   clUnsubs.push(F.onSnapshot(F.collection(db, 'salons', 'main', 'seclog'), snap => {
     let ch = false; snap.docChanges().forEach(c => { if (c.type === 'removed') return; const d = c.doc.data(); if (!SEC.log.some(l => l.id === c.doc.id)) { SEC.log.push({ id: c.doc.id, t: d.t, type: d.type, note: d.note }); ch = true; } });
@@ -2286,6 +2293,13 @@ function clRefreshUI() {
 }
 
 /* ----- سجل الأمان: يُرفع للسحابة بصيغة إضافة فقط (لا تعديل ولا حذف حسب القواعد) ----- */
+CL.spts = +(lsGet('as_cl_spts') || 0);
+let secBusy = false;
+async function clSecPush(force) {
+  if (!CL.user || !CL.fb || secBusy) return; if (!SEC.pts && SEC.hash) SEC.pts = Date.now();
+  if (!SEC.pts || (SEC.pts === CL.spts && !force)) return; secBusy = true;
+  try { const { F, db } = CL.fb; await F.setDoc(F.doc(db, 'salons', 'main', 'meta', 'sec'), { hash: SEC.hash, salt: SEC.salt, type: SEC.type, it: SEC.it, pts: SEC.pts }); CL.spts = SEC.pts; lsSet('as_cl_spts', CL.spts); } catch (e) {} secBusy = false;
+}
 let logQ = []; try { logQ = JSON.parse(lsGet('as_cl_lq') || '[]'); } catch (e) {}
 function clLog(en) { logQ.push(en); lsSet('as_cl_lq', JSON.stringify(logQ.slice(-300))); clLogFlush(); }
 async function clLogFlush() {
