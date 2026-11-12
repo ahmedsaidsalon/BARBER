@@ -16,7 +16,7 @@
 <meta name="apple-mobile-web-app-title" content="كاشير أحمد سعيد">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,600;1,700&family=Aref+Ruqaa:wght@400;700&family=Great+Vibes&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Playfair+Display:ital,wght@1,600;1,700&family=Aref+Ruqaa:wght@400;700&family=Great+Vibes&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <style>
 :root{
   --font:'IBM Plex Sans Arabic','Tajawal','Segoe UI',Tahoma,system-ui,sans-serif;
@@ -2176,12 +2176,6 @@ function fitPair(root, W = 330) {
   const run = () => root.querySelectorAll('.pair svg.hand text').forEach(t => { t.setAttribute('font-size', 100); const l = t.getComputedTextLength(); if (l > 0) t.setAttribute('font-size', Math.min(130, 100 * W / l).toFixed(1)); });
   run(); if (document.fonts) { Promise.all([document.fonts.load('70px "Aref Ruqaa"'), document.fonts.load('70px "Great Vibes"')]).then(run).catch(() => {}); document.fonts.ready.then(run); }
 }
-function showWelcome() {
-  if ($('#welcome')) return; const w = document.createElement('div'); w.id = 'welcome';
-  w.innerHTML = `<div class="wbox"><img src="${LOGO}" alt="">${hand('مرحباً', 'ar', 520, 190, 130)}${hand('Welcome', 'en', 520, 170, 118, 1.2)}<div class="wsub">Ahmed Said · أحمد سعيد</div></div>`;
-  document.body.appendChild(w); requestAnimationFrame(() => w.classList.add('on'));
-  const end = () => { w.classList.remove('on'); setTimeout(() => w.remove(), 600); }; w.onclick = end; setTimeout(end, 4200);
-}
 /* ----- بوابة الدخول ----- */
 function gateShow(msg) {
   let g = $('#loginGate');
@@ -2214,7 +2208,7 @@ async function clAccept(user, fromGate) {
     try { const { Au, auth } = await clLoad(); await Au.signOut(auth); } catch (e) {}
     lsSet('as_auth', ''); clSet('off'); const m = 'هذا الحساب غير مصرّح به. استخدم ' + OWNER_EMAIL; if (fromGate) { gateShow(m); } else toast(m, true); return false;
   }
-  CL.user = user; lsSet('as_auth', '1'); gateHide(); clStart(); if (fromGate) { try { sessionStorage.setItem('as_wel', '1'); } catch (e) {} showWelcome(); } return true;
+  CL.user = user; lsSet('as_auth', '1'); gateHide(); clStart(); return true;
 }
 
 /* ----- بدء المزامنة ----- */
@@ -2327,7 +2321,7 @@ async function clInit() {
 function cloudBoot() {
   bindCloud(); clUI();
   if (lsGet('as_auth') !== '1') { gateShow(); if (navigator.onLine) clLoad().then(async ({ Au, auth }) => { try { const r = await Au.getRedirectResult(auth); if (r && r.user) clAccept(r.user, true); } catch (e) {} }).catch(() => {}); else $('#gMsg').textContent = 'لا يوجد اتصال — يلزم الإنترنت لتسجيل الدخول أول مرة'; }
-  else { let seen = false; try { seen = sessionStorage.getItem('as_wel') === '1'; sessionStorage.setItem('as_wel', '1'); } catch (e) {} if (!seen) showWelcome(); setTimeout(clInit, 1200); }
+  else setTimeout(clInit, 1200);
 }
 
 /* ---------- Branches: gate, per-branch password, stats, printers ---------- */
