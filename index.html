@@ -1087,17 +1087,17 @@ function updateRest() {
 function setArmUI() {
   const has = S.cur.items.length, pb = $('#printBtn'), sb = $('#saveBtn');
   pb.disabled = !has; sb.disabled = !has; pb.classList.toggle('armed', armed && armMode === 'print'); sb.classList.toggle('armed', armed && armMode === 'save');
-  $('#printTxt').textContent = armed && armMode === 'print' ? 'اضغط Enter مرة أخرى لتأكيد الطباعة' : 'طباعة الفاتورة  —  Enter مرتين';
+  $('#printTxt').textContent = 'طباعة الفاتورة  —  Enter';
   $('#saveTxt').innerHTML = armed && armMode === 'save' ? ic('badge-check') + ' اضغط Space مرة أخرى للحفظ بدون طباعة' : ic('badge-check') + ' حفظ الحساب بدون طباعة  —  Space مرتين';
   const ps = payState(), need = has && !ps.ok; $('#payReq').classList.toggle('hidden', !need); $('#payReq').textContent = ps.rest != null && S.cur.pay.mode === 'split' ? 'راجع التقسيم' : 'مطلوبة';
 }
 function disarm() { armed = false; clearTimeout(armT); setArmUI(); }
-/* ضغطتان للتأكيد: Enter = طباعة، Space = حفظ في النظام بدون فاتورة مطبوعة */
+/* Enter = طباعة فورية بضغطة واحدة، Space مرتين = حفظ في النظام بدون فاتورة مطبوعة */
 function tryPrint(mode = 'print') {
   if (printing || !S.cur.items.length) return;
   const ps = payState();
   if (!ps.ok) { disarm(); toast(ps.msg, true); const b = $('#billCard'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); const f = $('#payBox .pm'); if (f) f.focus(); return; }
-  if (!armed || armMode !== mode) { armed = true; armMode = mode; clearTimeout(armT); armT = setTimeout(disarm, 4000); setArmUI(); beep(mode === 'print' ? 620 : 520); return; }
+  if (mode === 'save' && (!armed || armMode !== mode)) { armed = true; armMode = mode; clearTimeout(armT); armT = setTimeout(disarm, 4000); setArmUI(); beep(mode === 'print' ? 620 : 520); return; }
   disarm(); doPrintInvoice(ps.pays, mode === 'print');
 }
 
@@ -1835,7 +1835,7 @@ function renderHelp() {
   const sec = (t, rows) => `<div class="hl-title" style="grid-column:1/-1">${t}</div>` + rows.map(r => `<div><span>${r[0]}</span><span>${kb(r[1])}</span></div>`).join('');
   $('#keysList').innerHTML =
     sec(ic('receipt') + 'الفاتورة', [['فاتورة جديدة (تعليق الحالية في الانتظار)', ['F1'], ], ['خانة الخصم بالجنيه', ['F8']], ['فتح درج الخدمات والبحث الفوري', ['/']], ['إضافة أول نتيجة أثناء البحث', ['Enter']], ['إغلاق النافذة / إلغاء التأكيد', ['Esc']]]) +
-    sec(ic('printer') + 'الطباعة والحفظ (ضغطتان للأمان)', [['طباعة الفاتورة وإنهاء الحساب', ['Enter', 'Enter']], ['حفظ الحساب في النظام بدون طباعة فاتورة', ['Space', 'Space']], ['ملاحظة: تحديد طريقة الدفع إلزامي قبل الطباعة أو الحفظ', ['—']]]) +
+    sec(ic('printer') + 'الطباعة والحفظ', [['طباعة الفاتورة وإنهاء الحساب (ضغطة واحدة)', ['Enter']], ['حفظ الحساب في النظام بدون طباعة فاتورة', ['Space', 'Space']], ['ملاحظة: تحديد طريقة الدفع إلزامي قبل الطباعة أو الحفظ', ['—']]]) +
     sec(ic('scissors') + 'الخدمات والباقات', [...S.services, ...S.bundles].filter(x => x.key).map(x => [esc(x.name) + ' — ' + money(x.price) + ' ج.م', [x.key]])) +
     sec(ic('users') + 'الطابور والحجوزات', [['نداء العميل التالي', ['Alt', 'N']], ['تأجيل العميل الحالي ونداء التالي', ['Alt', 'P']], ['حجز جديد بالتليفون', ['Alt', 'B']], ['اسم عميل جديد في الانتظار', ['Alt', 'Q']]]) +
     sec(ic('layout-dashboard') + 'التنقل والإدارة', [['شاشة الكاشير', ['Alt', 'C']], ['مسحوبات ومصروفات', ['Alt', 'M']], ['التقارير (للمدير)', ['Alt', 'R']], ['الإعدادات (للمدير)', ['Alt', 'G']], ['قفل لوحة المدير', ['Alt', 'L']], ['إعدادات الكاشير (الخدمات السريعة وبيانات اليوم)', ['Alt', 'K']], ['تقفيل الوردية وجرد الدرج', ['F9']], ['هذا الدليل', ['F12']]]) +
