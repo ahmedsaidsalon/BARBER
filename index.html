@@ -412,6 +412,9 @@ td.n,th.n{text-align:center}.card .tscroll{padding:6px 10px}
   body>*:not(#printHost){display:none!important}
   #printHost{display:block!important}
   .rc{margin:0 auto}
+  body.p-rcpt,body.p-rcpt #app{margin:0!important;padding:0!important}
+  body.p-rcpt #printHost{width:80mm;margin:0;padding:0;position:static}
+  body.p-rcpt .rc{width:72mm!important;max-width:72mm;margin:0 auto!important;padding:0;break-inside:avoid-page}
   .a4{width:auto;min-height:0;padding:12mm 12mm 24mm}
   .a4 .wm{position:fixed;inset:0}
   .a4 .ft{position:fixed;bottom:9mm;inset-inline:12mm}
@@ -1201,7 +1204,7 @@ async function printDoc(html, mode) {
   if (prtBusy) return; prtBusy = true;
   const h = $('#printHost'); h.innerHTML = html.replace(/<img /g, '<img decoding="sync" loading="eager" ');
   document.body.classList.remove('p-rcpt', 'p-a4'); document.body.classList.add(mode);
-  setPage(mode === 'p-rcpt' ? '@page{size:80mm auto;margin:0}' : '@page{size:A4;margin:0}');
+  setPage(mode === 'p-rcpt' ? '@page{size:80mm 200mm;margin:0}' : '@page{size:A4;margin:0}');
   const clean = () => { document.body.classList.remove('p-rcpt', 'p-a4'); h.innerHTML = ''; prtBusy = false; };
   window.addEventListener('afterprint', clean, { once: true });
   /* انتظر تحميل كل الصور (الشعار وQR) قبل أمر الطباعة حتى لا تُطبع فارغة */
@@ -1209,6 +1212,9 @@ async function printDoc(html, mode) {
   const wm = new Promise(r => { const t = new Image(); t.onload = t.onerror = r; t.src = LOGO; });
   await Promise.race([Promise.all([...imgs, wm]), new Promise(r => setTimeout(r, 2500))]);
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  if (mode === 'p-rcpt') { /* ارتفاع الصفحة = ارتفاع الإيصال بالضبط (CSS لا يقبل auto مع عرض ثابت) فلا يُقص ولا تخرج ورقة فاضية */
+    const rc = h.querySelector('.rc'); if (rc) { h.style.cssText = 'display:block;position:absolute;visibility:hidden;left:0;top:0;width:80mm'; const mm = Math.ceil(rc.getBoundingClientRect().height / 3.7795) + 3; h.style.cssText = ''; setPage(`@page{size:80mm ${Math.min(1500, Math.max(40, mm))}mm;margin:0}`); }
+  }
   void h.offsetHeight; window.print();
   setTimeout(() => { if (prtBusy && !document.body.classList.contains('p-rcpt') && !document.body.classList.contains('p-a4')) prtBusy = false; }, 8000);
 }
