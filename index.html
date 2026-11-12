@@ -1094,17 +1094,17 @@ function updateRest() {
 function setArmUI() {
   const has = S.cur.items.length, pb = $('#printBtn'), sb = $('#saveBtn');
   pb.disabled = !has; sb.disabled = !has; pb.classList.toggle('armed', armed && armMode === 'print'); sb.classList.toggle('armed', armed && armMode === 'save');
-  $('#printTxt').textContent = 'طباعة الفاتورة  —  Enter';
+  $('#printTxt').textContent = armed && armMode === 'print' ? 'اضغط Enter مرة أخرى لتأكيد الطباعة' : 'طباعة الفاتورة  —  Enter مرتين';
   $('#saveTxt').innerHTML = armed && armMode === 'save' ? ic('badge-check') + ' اضغط Space مرة أخرى للحفظ بدون طباعة' : ic('badge-check') + ' حفظ الحساب بدون طباعة  —  Space مرتين';
   const ps = payState(), need = has && !ps.ok; $('#payReq').classList.toggle('hidden', !need); $('#payReq').textContent = ps.barber ? 'حدد الصنايعي' : ps.rest != null && S.cur.pay.mode === 'split' ? 'راجع التقسيم' : 'مطلوبة';
 }
 function disarm() { armed = false; clearTimeout(armT); setArmUI(); }
-/* Enter = طباعة فورية بضغطة واحدة، Space مرتين = حفظ في النظام بدون فاتورة مطبوعة */
+/* ضغطتان للتأكيد: Enter = طباعة، Space = حفظ في النظام بدون فاتورة مطبوعة */
 function tryPrint(mode = 'print') {
   if (printing || !S.cur.items.length) return;
   const ps = payState();
   if (!ps.ok) { disarm(); toast(ps.msg, true); const b = $('#billCard'); b.classList.remove('shake'); void b.offsetWidth; b.classList.add('shake'); const f = $('#payBox .pm'); if (f) f.focus(); return; }
-  if (mode === 'save' && (!armed || armMode !== mode)) { armed = true; armMode = mode; clearTimeout(armT); armT = setTimeout(disarm, 4000); setArmUI(); beep(mode === 'print' ? 620 : 520); return; }
+  if (!armed || armMode !== mode) { armed = true; armMode = mode; clearTimeout(armT); armT = setTimeout(disarm, 4000); setArmUI(); beep(mode === 'print' ? 620 : 520); return; }
   disarm(); doPrintInvoice(ps.pays, mode === 'print');
 }
 
@@ -1842,7 +1842,7 @@ function renderHelp() {
   const sec = (t, rows) => `<div class="hl-title" style="grid-column:1/-1">${t}</div>` + rows.map(r => `<div><span>${r[0]}</span><span>${kb(r[1])}</span></div>`).join('');
   $('#keysList').innerHTML =
     sec(ic('receipt') + 'الفاتورة', [['فاتورة جديدة (تعليق الحالية في الانتظار)', ['F1'], ], ['خانة الخصم بالجنيه', ['F8']], ['فتح درج الخدمات والبحث الفوري', ['/']], ['إضافة أول نتيجة أثناء البحث', ['Enter']], ['إغلاق النافذة / إلغاء التأكيد', ['Esc']]]) +
-    sec(ic('printer') + 'الطباعة والحفظ', [['طباعة الفاتورة وإنهاء الحساب (ضغطة واحدة)', ['Enter']], ['حفظ الحساب في النظام بدون طباعة فاتورة', ['Space', 'Space']], ['ملاحظة: تحديد طريقة الدفع إلزامي قبل الطباعة أو الحفظ', ['—']]]) +
+    sec(ic('printer') + 'الطباعة والحفظ (ضغطتان للأمان)', [['طباعة الفاتورة وإنهاء الحساب', ['Enter', 'Enter']], ['حفظ الحساب في النظام بدون طباعة فاتورة', ['Space', 'Space']], ['ملاحظة: تحديد طريقة الدفع إلزامي قبل الطباعة أو الحفظ', ['—']]]) +
     sec(ic('scissors') + 'الخدمات والباقات', [...S.services, ...S.bundles].filter(x => x.key).map(x => [esc(x.name) + ' — ' + money(x.price) + ' ج.م', [x.key]])) +
     sec(ic('users') + 'الطابور والحجوزات', [['نداء العميل التالي', ['Alt', 'N']], ['تأجيل العميل الحالي ونداء التالي', ['Alt', 'P']], ['حجز جديد بالتليفون', ['Alt', 'B']], ['اسم عميل جديد في الانتظار', ['Alt', 'Q']]]) +
     sec(ic('layout-dashboard') + 'التنقل والإدارة', [['شاشة الكاشير', ['Alt', 'C']], ['مسحوبات ومصروفات', ['Alt', 'M']], ['التقارير (للمدير)', ['Alt', 'R']], ['الإعدادات (للمدير)', ['Alt', 'G']], ['قفل لوحة المدير', ['Alt', 'L']], ['إعدادات الكاشير (الخدمات السريعة وبيانات اليوم)', ['Alt', 'K']], ['تقفيل الوردية وجرد الدرج', ['F9']], ['هذا الدليل', ['F12']]]) +
@@ -2228,7 +2228,7 @@ async function clAccept(user, fromGate) {
     try { const { Au, auth } = await clLoad(); await Au.signOut(auth); } catch (e) {}
     lsSet('as_auth', ''); clSet('off'); const m = 'هذا الحساب غير مصرّح به. استخدم ' + OWNER_EMAIL; if (fromGate) { gateShow(m); } else toast(m, true); return false;
   }
-  CL.user = user; lsSet('as_auth', '1'); gateHide(); clStart(); return true;
+  CL.user = user; lsSet('as_auth', '1'); if (fromGate) { $('#gMsg').textContent = 'جارٍ تحميل البيانات…'; if (await clPrefetch()) { flushSaveLocal(); saveSec(); location.reload(); return true; } } gateHide(); clStart(); return true;
 }
 
 /* ----- بدء المزامنة ----- */
@@ -2242,12 +2242,7 @@ async function clStart() {
   /* meta: آخر كتابة تغلب */
   clUnsubs.push(F.onSnapshot(F.doc(db, 'salons', 'main', 'meta', 'state'), snap => {
     if (snap.metadata.hasPendingWrites || !snap.exists()) { if (!snap.exists()) clPushMeta(true); return; }
-    const d = snap.data(); let rm; try { rm = JSON.parse(d.json); } catch (e) { return; }
-    const mine = hsh(JSON.stringify(metaPayload()));
-    if (mine !== hsh(d.json) && (d.ts || 0) > CL.mts) {
-      CL.applying = true; try { META_KEYS.forEach(k => { if (rm[k] !== undefined) S[k] = rm[k]; }); if (rm.settings) Object.assign(S.settings, rm.settings); if (rm.counters) Object.keys(rm.counters).forEach(k => { S.counters[k] = Math.max(S.counters[k] || 0, rm.counters[k] || 0); });
-        CL.mts = d.ts; lsSet('as_cl_mts', CL.mts); CL.mhash = hsh(JSON.stringify(metaPayload())); lsSet('as_cl_mh', CL.mhash); flushSaveLocal(); refreshSoon(); } finally { CL.applying = false; }
-    } else { CL.mhash = mine; }
+    clApplyMeta(snap.data());
     clSet('ok');
   }, onErr));
   /* المجموعات */
@@ -2272,9 +2267,7 @@ async function clStart() {
   /* كلمة مرور المدير: تتزامن بين الأجهزة كبصمة مشفّرة (PBKDF2 + salt) وليس كنص صريح */
   clUnsubs.push(F.onSnapshot(F.doc(db, 'salons', 'main', 'meta', 'sec'), snap => {
     if (!snap.exists()) { clSecPush(true); return; }
-    const d = snap.data(); if (snap.metadata.hasPendingWrites) return;
-    if ((d.pts || 0) > (SEC.pts || 0)) { SEC.hash = d.hash || ''; SEC.salt = d.salt || ''; SEC.type = d.type || 'num'; SEC.it = d.it || 120000; SEC.pts = d.pts; SEC.fails = 0; SEC.lockUntil = 0; CL.spts = d.pts; lsSet('as_cl_spts', CL.spts); saveSec(); try { updateLockUI(); } catch (e) {} }
-    else CL.spts = Math.max(CL.spts, d.pts || 0);
+    if (snap.metadata.hasPendingWrites) return; clApplySec(snap.data());
   }, () => {}));
   /* استرجاع سجل الأمان من السحابة لو اتمسح محلياً */
   clUnsubs.push(F.onSnapshot(F.collection(db, 'salons', 'main', 'seclog'), snap => {
@@ -2295,6 +2288,27 @@ function clRefreshUI() {
 /* ----- سجل الأمان: يُرفع للسحابة بصيغة إضافة فقط (لا تعديل ولا حذف حسب القواعد) ----- */
 CL.spts = +(lsGet('as_cl_spts') || 0);
 let secBusy = false;
+function clApplySec(d) {
+  if ((d.pts || 0) > (SEC.pts || 0)) { SEC.hash = d.hash || ''; SEC.salt = d.salt || ''; SEC.type = d.type || 'num'; SEC.it = d.it || 120000; SEC.pts = d.pts; SEC.fails = 0; SEC.lockUntil = 0; CL.spts = d.pts; lsSet('as_cl_spts', CL.spts); saveSec(); }
+  else CL.spts = Math.max(CL.spts, d.pts || 0);
+}
+function clApplyMeta(d) {
+  let rm; try { rm = JSON.parse(d.json); } catch (e) { return; }
+  const mine = hsh(JSON.stringify(metaPayload()));
+  if (mine !== hsh(d.json) && (d.ts || 0) > CL.mts) {
+    CL.applying = true; try { META_KEYS.forEach(k => { if (rm[k] !== undefined) S[k] = rm[k]; }); if (rm.settings) Object.assign(S.settings, rm.settings); if (rm.counters) Object.keys(rm.counters).forEach(k => { S.counters[k] = Math.max(S.counters[k] || 0, rm.counters[k] || 0); });
+      CL.mts = d.ts; lsSet('as_cl_mts', CL.mts); CL.mhash = hsh(JSON.stringify(metaPayload())); lsSet('as_cl_mh', CL.mhash); flushSaveLocal(); setTimeout(() => { CL.applying = true; try { clRefreshUI(); } finally { CL.applying = false; } }, 120); } finally { CL.applying = false; }
+  } else { CL.mhash = mine; }
+  clSet('ok');
+}
+/* جهاز جديد: اسحب كلمة المرور والإعدادات قبل فتح النظام حتى لا يُفتح بدون باسورد */
+async function clPrefetch() {
+  try {
+    const { F, db } = await clLoad(), t = new Promise(r => setTimeout(r, 7000, null));
+    const [a, b] = await Promise.race([Promise.all([F.getDoc(F.doc(db, 'salons', 'main', 'meta', 'sec')), F.getDoc(F.doc(db, 'salons', 'main', 'meta', 'state'))]), t.then(() => [null, null])]);
+    const before = (SEC.pts || 0) + '|' + CL.mts; if (a && a.exists()) clApplySec(a.data()); if (b && b.exists()) clApplyMeta(b.data()); return before !== (SEC.pts || 0) + '|' + CL.mts;
+  } catch (e) { return false; }
+}
 async function clSecPush(force) {
   if (!CL.user || !CL.fb || secBusy) return; if (!SEC.pts && SEC.hash) SEC.pts = Date.now();
   if (!SEC.pts || (SEC.pts === CL.spts && !force)) return; secBusy = true;
