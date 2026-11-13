@@ -611,6 +611,22 @@ html.lite #loginGate svg.hand.en text{fill:var(--pri2);stroke-width:2.2}
 .rc .svcl{text-align:center;font-size:11px;font-weight:700;margin:1.2mm 2mm 0;color:#000}.rc .svcl b{letter-spacing:.3px}
 .a4 .ft .svcl{display:block;font-size:10.5px;font-weight:700;color:#333;margin-top:1px}
 .row-i.need{box-shadow:inset 3px 0 0 var(--red);background:rgba(220,38,38,.05)}
+/* ===== compact receipt ===== */
+.rc .zz{height:5px;margin-bottom:1.5mm}.rc .zz.b{margin-top:1.5mm}
+.rc .lg{width:13mm}.rc .rhd{gap:2mm}.rc .r_nm{font-size:19px}.rc .r_en{font-size:8px;letter-spacing:3px;margin-top:1px}.rc .pole{height:4px;margin-top:3px}
+.rc .loc{margin:1.5mm 1.5mm 0;padding:2px 6px;font-size:9.5px;line-height:1.35}.rc .lr{margin:0}.rc .lr .i{margin-top:2px;width:10px;height:10px}.rc .br{margin-top:2px;padding-top:2px}.rc .loc .oth{margin-top:3px;padding-top:2px;font-size:9.5px}.rc .loc .br b{font-size:10.5px}
+.rc .band{margin:1.5mm 0 0;padding:2px 3mm;font-size:12px}.rc .band b{font-size:13px}
+.rc .meta{display:flex;flex-wrap:wrap;justify-content:space-between;gap:0 6px;margin:1mm 2mm 0;font-size:10px;line-height:1.35;padding-bottom:1mm;border-bottom:1px solid #000}.rc .meta .cu{flex-basis:100%}
+.rc .cp .items{margin:1mm 2mm 0}
+.rc .r_it2{display:flex;align-items:baseline;gap:4px;padding:1.5px 0;border-bottom:1px dotted #000;font-size:11.5px;line-height:1.3}.rc .r_it2:last-child{border-bottom:0}
+.rc .r_it2 .nm{flex:1;min-width:0;font-weight:700}.rc .r_it2 .nm small{font-weight:500;font-size:9px}.rc .r_it2 .q{font-size:9.5px;white-space:nowrap}.rc .r_it2 .tt{font-weight:700;min-width:10mm;text-align:end}
+.rc .tl{font-size:11px;margin:1px 2mm}
+.rc .grand{padding:3px 3mm;margin:1mm 0;font-size:16px}.rc .grand small{font-size:9.5px}
+.rc .payl{display:flex;gap:5px;justify-content:center;font-size:10.5px;margin:0 2mm}
+.rc .thx{margin-top:1mm}.rc .thx b{font-size:11.5px}
+.rc .cred{margin:1.5mm 2mm 0;gap:2mm}.rc .cred img{width:11mm;height:11mm}.rc .ct .ar{font-size:10px}.rc .ct .en{font-size:8.5px}
+.rc .svcl{font-size:9px;margin:.5mm 2mm 0}
+.rc .cutln{margin:1.5mm 2mm 0}.rc .grid>div{padding:2px 6px}
 
 </style>
 </head>
@@ -1173,7 +1189,7 @@ function renderXfer() {
   const ms = S.payMethods.filter(m => m.on && m.kind === 'transfer');
   $('#xferList').innerHTML = ms.length ? ms.map(m => `<div class="xfer"><span class="pi">${ic(payIcon(m))}</span><div style="min-width:0"><b>${esc(m.name)}</b><div class="no num">${m.number ? esc(m.number) : '<span style="color:var(--mut);font-size:12px;font-family:var(--font)">لم يُسجَّل رقم</span>'}</div></div>${m.number ? `<button class="btn sm ic" data-copy="${esc(m.number)}" title="نسخ الرقم">${ic('copy')}</button>` : ''}</div>`).join('') : '<div class="empty" style="padding:14px">لا توجد طرق تحويل مفعّلة</div>';
 }
-function renderStats() { updateBranchUI(); const o = openInvoices(); $('#stN').textContent = o.length; $('#stT').textContent = money(sum(o, 'total')); const out = cashOut(openMoves()); $('#stX').textContent = money(r2(Object.values(byMethod(o)).filter(x => x.kind !== 'cash').reduce((a, x) => a + x.amt, 0))); $('#stD').textContent = money(r2(sum(o, 'total') - out)); $('#stD').parentElement.title = 'إجمالي الوردية ' + money(sum(o, 'total')) + ' − مصروفات ومسحوبات ' + money(out); }
+function renderStats() { updateBranchUI(); const o = openInvoices(); $('#stN').textContent = o.length; $('#stT').textContent = money(sum(o, 'total')); const out = cashOut(openMoves()); $('#stX').textContent = money(r2(Object.values(byMethod(o)).filter(x => x.kind !== 'cash').reduce((a, x) => a + x.amt, 0))); $('#stD').textContent = money(r2(cashOf(o) - out)); $('#stD').parentElement.title = 'نقدي ' + money(cashOf(o)) + ' − مصروفات ومسحوبات ' + money(out) + ' (التحويلات منفصلة، وإجمالي الوردية = النقدي + التحويلات)'; }
 
 /* ----- drawer ----- */
 let dTab = 's', dPinned = false, dTimer = null;
@@ -1238,16 +1254,14 @@ const rcHead = (title, no, brId) => `<div class="zz"></div><div class="rhd"><img
   ${locBox(brId)}<div class="band"><span>${title}</span><b class="num" dir="ltr">#${padNo(no)}</b></div>`;
 const kv = (l, v) => `<div><small>${l}</small><b>${v}</b></div>`;
 function receiptHTML(inv) {
-  const items = inv.items.map((i, n) => `<div class="r_it"><span class="ix num">${n + 1}</span><div class="mid"><div class="r_l1"><span>${esc(i.name)}</span><i class="dots"></i><span class="num">${money(i.price * i.qty)}</span></div><div class="r_l2"><span>${ic('scissors')}${esc(i.barberName)}</span><span class="num" dir="ltr">${i.qty} × ${money(i.price)}</span></div></div></div>`).join('');
+  const items = inv.items.map(i => `<div class="r_it2"><span class="nm">${esc(i.name)}${i.barberName ? ` <small>(${esc(i.barberName)})</small>` : ''}</span><span class="q num" dir="ltr">${i.qty} × ${money(i.price)}</span><span class="tt num">${money(i.price * i.qty)}</span></div>`).join('');
   const pays = inv.pays || [];
-  return `<div class="rc">${rcHead('فاتورة مبيعات', inv.no, inv.branch)}
-    <div class="grid">${kv('التاريخ', `<span class="num" dir="ltr">${fmtD(inv.ts)}</span>`)}${kv('الوقت', `<span class="num" dir="ltr">${fmtT(inv.ts)}</span>`)}${kv('الكاشير', esc(inv.cashier || '—'))}${kv('العميل', esc(inv.cust || '—'))}</div>
-    <div class="code"><small>كود الفاتورة</small><b class="num" dir="ltr">${esc(invCode(inv))}</b></div>
+  return `<div class="rc cp">${rcHead('فاتورة', inv.no, inv.branch)}
+    <div class="meta"><span class="num" dir="ltr">${fmtD(inv.ts)} · ${fmtT(inv.ts)}</span><span>الكاشير: <b>${esc(inv.cashier || '—')}</b></span>${inv.cust ? `<span class="cu">العميل: <b>${esc(inv.cust)}</b></span>` : ''}</div>
     <div class="items">${items}</div>
     ${inv.disc > 0 ? `<div class="tl"><span>المجموع</span><span class="num">${money(inv.sub)}</span></div><div class="tl"><span>الخصم</span><span class="num">- ${money(inv.disc)}</span></div>` : ''}
     <div class="grand"><span>الإجمالي</span><span class="num">${money(inv.total)} <small>ج.م</small></span></div>
-    <div class="paych"><h5>طريقة الدفع</h5><div class="chips">${pays.map(p => `<div class="pc">${ic(p.kind === 'cash' ? 'banknote' : 'smartphone')}<b>${esc(p.name)}</b>${pays.length > 1 ? `<span class="num">${money(p.amt)}</span>` : ''}</div>`).join('')}</div></div>
-    <div class="hatch"></div>
+    <div class="payl"><span>الدفع:</span><b>${pays.map(p => esc(p.name) + (pays.length > 1 ? ' ' + money(p.amt) : '')).join(' + ')}</b></div>
     <div class="thx"><b>شكرًا لزيارتكم — يسعدنا خدمتكم دائمًا</b></div>${atharQR()}
     <div class="cutln">${ic('scissors')}</div><div class="zz b"></div></div>`;
 }
@@ -1500,7 +1514,7 @@ function repClick(e) {
   const rq = t.closest('[data-rq]'); if (rq) { const k = rq.dataset.rq, d = new Date(); if (k === 'yest') d.setDate(d.getDate() - 1); range = k === 'month' ? { f: monthStart(), t: today() } : { f: dayStr(d), t: dayStr(d) }; $('#rF').value = range.f; $('#rT').value = range.t; return drawOut(); }
   const iv = t.closest('[data-iv]'); if (iv) { const [k, id] = iv.dataset.iv.split(':'), inv = S.invoices.find(i => i.id === id); if (!inv) return; if (k === 'view') showPreview('معاينة الفاتورة #' + inv.no, receiptHTML(inv), 'rc'); if (k === 'print') printDoc(receiptHTML(inv), 'p-rcpt'); if (k === 'del') deleteInvoice(id); return; }
   const a = t.closest('[data-act]'); if (!a) return; const k = a.dataset.act;
-  if (k === 'bonusNew') return mvForm('bonus'); if (k.startsWith('mvNew:')) return mvForm(k.slice(6)); if (k.startsWith('mvDel:')) return delMove(k.slice(6));
+  if (k.startsWith('wdet:')) return workerDoc(k.slice(5)); if (k === 'bonusNew') return mvForm('bonus'); if (k.startsWith('mvNew:')) return mvForm(k.slice(6)); if (k.startsWith('mvDel:')) return delMove(k.slice(6));
   if (k === 'pwnew') pwForm('create'); else if (k === 'custCsv') custCsv(); else workClick(a, k); stmtAct(k);
 }
 function drawOut() { if (repTab === 'inv') drawInv(); else if (repTab === 'mv') drawMv(); else if (repTab === 'work') drawWork(); else if (repTab === 'stmt') drawStmt(); }
@@ -1521,6 +1535,7 @@ function drawWork() {
       <div class="wk-g"><div><small>الرؤوس</small><b class="num">${x.heads}</b></div><div><small>الدخل</small><b class="num">${money(x.rev)}</b></div><div><small>المستحق</small><b class="num">${money(x.due)}</b></div></div>
       <div class="wk-g"><div><small>زيادات</small><b class="num">${money(x.bonus)}</b></div><div><small>مسحوبات</small><b class="num">${money(x.wd)}</b></div><div><small>خصومات</small><b class="num">${money(x.ded)}</b></div></div>
       <div class="prog"><i style="width:${paidPct}%"></i></div><div style="display:flex;justify-content:space-between;margin:8px 0 12px;color:var(--mut);font-weight:600"><span>المتبقي للمحاسبة</span><b class="num" style="color:var(--tx);font-family:var(--disp);font-size:18px">${money(x.remain)} ج.م</b></div>
+      <button class="btn" style="width:100%;margin-bottom:8px" data-act="wdet:${esc(x.id)}">${ic('list')}تفاصيل ${esc(x.name)} (كل ما عمله)</button>
       <button class="btn ${x.remain > 0 || x.pendB > 0 || x.unpaid > 0 ? 'ok' : ''}" style="width:100%" ${x.remain > 0 || x.pendB > 0 || x.unpaid > 0 ? '' : 'disabled'} data-act="settle:${esc(x.id)}">${ic('hand-coins')}محاسبة ${esc(x.name)}</button></div>`; }).join('')}</div>` : '<div class="card"><div class="empty">لا توجد مبيعات في هذه الفترة</div></div>') +
     `<h3 class="cut" style="margin:22px 0 8px">${ic('receipt')}إيصالات المحاسبة في الفترة</h3>` +
     (pays.length ? `<div class="card"><div class="tscroll"><table><thead><tr><th>#</th><th>التاريخ والوقت</th><th>الصنايعي</th><th>عن الفترة</th><th class="n">رؤوس</th><th class="n">المستحق</th><th class="n">زيادات</th><th class="n">مسحوبات</th><th class="n">الخصم</th><th class="n">المدفوع</th><th class="n">إجراءات</th></tr></thead><tbody>${pays.map(p => `<tr><td class="num">${p.no}</td><td dir="ltr" style="text-align:start;font-size:12.5px">${fmtDT(p.ts)}</td><td><b>${esc(p.barberName)}</b></td><td dir="ltr" style="text-align:start;font-size:12.5px">${p.from === p.to ? p.from : p.from + ' ← ' + p.to}</td><td class="n num">${p.heads}</td><td class="n num">${money(p.due)}</td><td class="n num">${p.bonus ? "+ " + money(p.bonus) : "—"}</td><td class="n num">${p.wd ? "- " + money(p.wd) : "—"}</td><td class="n num">${p.deduction > 0 ? '<span style="color:var(--red)">- ' + money(p.deduction) + '</span>' + (p.reason ? '<br><small style="color:var(--mut)">' + esc(p.reason) + '</small>' : '') : '—'}</td><td class="n num"><b>${money(p.net)}</b></td><td class="n" style="white-space:nowrap"><button class="btn sm ic" data-act="pv:${p.id}" title="معاينة">${ic('eye')}</button> <button class="btn sm ic" data-act="pp:${p.id}" title="طباعة">${ic('printer')}</button> <button class="btn sm ic red" data-act="pu:${p.id}" title="إلغاء المحاسبة">${ic('undo-2')}</button></td></tr>`).join('')}</tbody></table></div></div>` : '<div class="card"><div class="empty">لا توجد إيصالات محاسبة في هذه الفترة</div></div>');
@@ -2061,13 +2076,14 @@ function pnl(f, t) {
   const pays = S.payouts.filter(p => p.ts >= startOf(f) && p.ts <= endOf(t) && (!repBranch || (p.branch || MAIN) === repBranch));
   const revenue = r2(sum(invs, 'total')), expT = r2(sum(ex, 'amt')), woT = r2(sum(wd, 'amt')), boT = r2(sum(bo, 'amt')), ded = r2(sum(pays, 'deduction'));
   cogs = r2(cogs); shares = r2(shares);
-  const xfer = r2(Object.values(byMethod(invs)).filter(x => x.kind !== 'cash').reduce((a, x) => a + x.amt, 0)), net = r2(revenue - cogs - shares - boT - expT + ded), drawer = r2(revenue - expT - woT);
-  return { invs, ex, wd, bo, pays, pr, drawer, xfer, revenue, svc: r2(svc), prod: r2(prod), cogs, shares, boT, expT, woT, ded, net, grossProd: r2(prod - cogs), payable: r2(shares + boT - woT - ded), heads, units, disc: r2(sum(invs, 'disc')), cnt: invs.length };
+  const xfer = r2(Object.values(byMethod(invs)).filter(x => x.kind !== 'cash').reduce((a, x) => a + x.amt, 0)), cashIn = r2(revenue - xfer), net = r2(revenue - cogs - shares - boT - expT + ded), drawer = r2(cashIn - expT - woT);
+  const shifts = S.shifts.filter(s => s.closedAt >= startOf(f) && s.closedAt <= endOf(t)).sort((a, b) => a.closedAt - b.closedAt), short = r2(-sum(shifts.filter(s => s.diff < 0), 'diff')), over = r2(sum(shifts.filter(s => s.diff > 0), 'diff'));
+  return { invs, ex, wd, bo, pays, pr, drawer, xfer, cashIn, shifts, short, over, revenue, svc: r2(svc), prod: r2(prod), cogs, shares, boT, expT, woT, ded, net, grossProd: r2(prod - cogs), payable: r2(shares + boT - woT - ded), heads, units, disc: r2(sum(invs, 'disc')), cnt: invs.length };
 }
 function pnlTiles(P) {
   return `<div class="grid3" style="margin-bottom:14px">${tile('إجمالي الإيراد', cur(P.revenue), 'coins')}${tile('تكلفة المنتجات المباعة', cur(P.cogs), 'package', P.cogs ? 'neg' : '')}${tile('نصيب الصنايعية', cur(P.shares), 'users', P.shares ? 'neg' : '')}
     ${tile('الزيادات للصنايعية', cur(P.boT), 'gift', P.boT ? 'neg' : '')}${tile('مصروفات المحل', cur(P.expT), 'receipt', P.expT ? 'neg' : '')}${tile('مسحوبات الصنايعية', cur(P.woT), 'hand-coins')}
-    ${tile('خصومات على الصنايعية', cur(P.ded), 'circle-minus')}${tile('ربح المنتجات', cur(P.grossProd), 'shopping-bag', P.grossProd > 0 ? 'pos' : '')}${tile('نقدية الدرج', cur(P.drawer), 'banknote', 'pos')}${tile('إجمالي التحويلات', cur(P.xfer), 'smartphone')}${tile('صافي الربح', cur(P.net), 'trending-up', P.net > 0 ? 'pos big' : P.net < 0 ? 'neg big' : 'big')}</div>`;
+    ${tile('خصومات على الصنايعية', cur(P.ded), 'circle-minus')}${tile('ربح المنتجات', cur(P.grossProd), 'shopping-bag', P.grossProd > 0 ? 'pos' : '')}${tile('نقدية الدرج', cur(P.drawer), 'banknote', 'pos')}${tile('إجمالي التحويلات', cur(P.xfer), 'smartphone')}${tile('العجز', cur(P.short), 'triangle-alert', P.short ? 'neg' : '')}${tile('الزيادة', cur(P.over), 'circle-plus', P.over ? 'pos' : '')}${tile('صافي الربح', cur(P.net), 'trending-up', P.net > 0 ? 'pos big' : P.net < 0 ? 'neg big' : 'big')}</div>`;
 }
 const pnlRows = P => [
   ['إجمالي الإيراد (كل ما دخل من فواتير الخدمات والمنتجات)', P.revenue, 0],
@@ -2121,7 +2137,7 @@ function buildFull() {
   const html = a4HTML({ title: 'كشف الحساب الشامل', info: [['الفترة', `<span class="ltr num">${periodTxt(r)}</span>`], ['الفرع', esc(brn)], ['عدد الفواتير', `<span class="num">${P.cnt}</span>`], ['عدد الرؤوس', `<span class="num">${P.heads}</span>`]],
     sum: [['إجمالي الإيراد', cur(P.revenue)], ['المصروفات', cur(P.expT)], ['مستحقات الصنايعية', cur(P.shares)], ['صافي الربح', cur(P.net), 1]],
     body: `<h3 class="sec">من الإيراد إلى صافي الربح</h3>${a4Table(['البند', 'المبلغ'], pnlRows(P).map(x => [x[2] === 1 ? `<b>${x[0]}</b>` : x[0], x[2] === 1 ? `<b>${money(x[1])}</b>` : money(x[1])]))}
-      <h3 class="sec">نقدية الدرج (للتسليم)</h3>${a4Table(['البند', 'المبلغ'], [['إجمالي الإيراد', money(P.revenue)], ['يُخصم: مصروفات المحل', '- ' + money(P.expT)], ['يُخصم: مسحوبات الصنايعية', '- ' + money(P.woT)], ['<b>نقدية الدرج</b>', `<b>${money(P.drawer)}</b>`], ['إجمالي التحويلات (فودافون كاش / إنستا باي) — ليست في الدرج', money(P.xfer)]])}<div class="note" style="margin-top:6px">من الإيراد: نقدي ${money(r2(Object.values(pm).filter(x => x.kind === 'cash').reduce((a, x) => a + x.amt, 0)))} ج.م وتحويلات ${money(r2(Object.values(pm).filter(x => x.kind !== 'cash').reduce((a, x) => a + x.amt, 0)))} ج.م.</div>
+      <h3 class="sec">نقدية الدرج (للتسليم)</h3>${a4Table(['البند', 'المبلغ'], [['إجمالي الإيراد (نقدي + تحويلات)', money(P.revenue)], ['منه: إيراد نقدي', money(P.cashIn)], ['منه: إجمالي التحويلات (فودافون كاش / إنستا باي)', money(P.xfer)], ['يُخصم من النقدي: مصروفات المحل', '- ' + money(P.expT)], ['يُخصم من النقدي: مسحوبات الصنايعية', '- ' + money(P.woT)], ['<b>نقدية الدرج (النقدي فقط)</b>', `<b>${money(P.drawer)}</b>`]])}<h3 class="sec">الورديات: العجز والزيادة</h3>${P.shifts.length ? a4Table(['#', 'النوع', 'الكاشير', 'تاريخ التقفيل', 'المتوقع نقداً', 'الفعلي', 'الفارق'], P.shifts.map(s => [s.no, s.type === 'day' ? 'تصفية يوم' : 'وردية', esc(s.cashier), `<span class="ltr num">${fmtDT(s.closedAt)}</span>`, money(s.expected), money(s.actual), s.diff === 0 ? 'مطابق' : s.diff < 0 ? 'عجز ' + money(-s.diff) : 'زيادة ' + money(s.diff)]), ['', '', '', '', '', 'العجز / الزيادة', `${money(P.short)} / ${money(P.over)}`]) : '<div class="note">لا توجد ورديات مقفلة في الفترة.</div>'}
       <div class="note" style="margin-top:6px">مسحوبات الصنايعية (${money(P.woT)} ج.م) سُلَف من حساب الصنايعية وتُخصم من مستحقاتهم عند المحاسبة، لذلك لا تُخصم من الربح مرتين. صافي ما يُستحق للصنايعية بعد الزيادات والمسحوبات والخصومات: <b>${money(P.payable)} ج.م</b>.</div>
       <h3 class="sec">مصروفات المحل بالأسباب</h3>${moveTable(P.ex, false)}
       <h3 class="sec">مسحوبات الصنايعية بالأسباب</h3>${moveTable(P.wd, true)}
@@ -2154,6 +2170,23 @@ function prodForm(id) {
     if (!name || c === '' || p === '' || s === '' || +c < 0 || +p < 0 || +s < 0) { toast('اكتب الاسم وسعر الشراء وسعر البيع والكمية', true); return false; }
     const o = g.id ? g : (S.products.push({ id: uid() }), S.products[S.products.length - 1]); Object.assign(o, { name, cost: +c, price: +p, stock: Math.floor(+s) }); save(); drawSet(); renderCash();
   });
+}
+
+/* ----- تفاصيل صنايعي واحد: كل ما عمله ----- */
+function workerDoc(bid) {
+  const r = readRange(), P = pnl(r.f, r.t), A = workerAcc(r.f, r.t, bid)[0] || { id: bid, name: barberName(bid), heads: 0, rev: 0, due: 0, bonus: 0, wd: 0, ded: 0, net: 0, paid: 0, remain: 0, pct: null };
+  const rows = []; P.invs.slice().sort((a, b) => a.ts - b.ts).forEach(inv => inv.items.forEach(x => { if (x.kind !== 'p' && x.barber === bid) rows.push({ inv, x }); }));
+  const byS = {}, byD = {}; rows.forEach(({ inv, x }) => { const a = byS[x.name] || (byS[x.name] = { q: 0, rev: 0, sh: 0 }); a.q += x.qty; a.rev += x.rev; a.sh += x.share; const d = dayStr(inv.ts), b = byD[d] || (byD[d] = { q: 0, inv: new Set(), rev: 0, sh: 0 }); b.q += x.qty; b.inv.add(inv.no); b.rev += x.rev; b.sh += x.share; });
+  const payNo = id => { const p = S.payouts.find(q => q.id === id); return p ? '#' + p.no : '—'; }, nInv = new Set(rows.map(r => r.inv.no)).size, days = Object.keys(byD).length;
+  const svc = Object.entries(byS).sort((a, b) => b[1].rev - a[1].rev), P2 = { ...P, bo: P.bo.filter(m => m.barber === bid), wd: P.wd.filter(m => m.barber === bid), pays: P.pays.filter(p => p.barber === bid) };
+  const html = a4HTML({ title: 'تفاصيل الصنايعي: ' + A.name, info: [['الصنايعي', esc(A.name)], ['الفترة', `<span class="ltr num">${periodTxt(r)}</span>`], ['أيام العمل', `<span class="num">${days}</span>`], ['عدد الفواتير', `<span class="num">${nInv}</span>`]],
+    sum: [['الرؤوس', String(A.heads)], ['إجمالي الدخل', money(A.rev) + ' ج.م'], ['أرباحه (النسبة)', money(A.due) + ' ج.م'], ['الصافي المستحق', money(A.net) + ' ج.م', 1]],
+    body: `<h3 class="sec">ملخص الحساب</h3>${a4Table(['البند', 'القيمة'], [['عدد الرؤوس / الخدمات', A.heads], ['متوسط سعر الخدمة', money(A.heads ? A.rev / A.heads : 0)], ['إجمالي الدخل', money(A.rev)], ['نسبته', pctTxt(A.pct)], ['أرباحه من الخدمات', money(A.due)], ['زيادات', '+ ' + money(A.bonus)], ['مسحوبات', '- ' + money(A.wd)], ['خصومات', '- ' + money(A.ded)], ['<b>الصافي المستحق</b>', `<b>${money(A.net)}</b>`], ['تم صرفه', money(A.paid)], ['المتبقي للمحاسبة', money(A.remain)]])}
+      ${svc.length ? `<h3 class="sec">حسب نوع الخدمة</h3>${a4Table(['الخدمة', 'العدد', 'الدخل', 'أرباحه'], svc.map(([n, a]) => [esc(n), a.q, money(a.rev), money(a.sh)]), ['الإجمالي', sum(svc.map(x => x[1]), 'q'), money(sum(svc.map(x => x[1]), 'rev')), money(sum(svc.map(x => x[1]), 'sh'))])}` : ''}
+      ${days ? `<h3 class="sec">حسب اليوم</h3>${a4Table(['التاريخ', 'الفواتير', 'الرؤوس', 'الدخل', 'أرباحه'], Object.keys(byD).sort().map(d => [`<span class="ltr num">${d}</span>`, byD[d].inv.size, byD[d].q, money(byD[d].rev), money(byD[d].sh)]))}` : ''}
+      ${rows.length ? `<h3 class="sec">كل العمليات (${rows.length})</h3>${a4Table(['فاتورة', 'التاريخ والوقت', 'العميل', 'الخدمة', 'الكمية', 'السعر', 'الدخل', 'أرباحه', 'محاسبة'], rows.map(({ inv, x }) => [`<b class="num">#${inv.no}</b>`, `<span class="ltr num">${fmtDT(inv.ts)}</span>`, esc(inv.cust || '—'), esc(x.name), x.qty, money(x.price), money(x.rev), money(x.share), x.paid ? payNo(x.paid) : 'لم يُحاسب']))}` : '<div class="note">لا توجد عمليات في هذه الفترة.</div>'}
+      ${workerDetail(P2, { ...A, w: 1 })}` });
+  showPreview('تفاصيل ' + A.name, html, 'a4');
 }
 /* ---------- Firebase: تسجيل الدخول بحساب المالك + مزامنة Firestore ---------- */
 const FB_CFG = { apiKey: 'AIzaSyArboNLzbe-3tpyZlAm1Z40_InDPcWwVoc', authDomain: 'ahmed-said-salon.firebaseapp.com', projectId: 'ahmed-said-salon', storageBucket: 'ahmed-said-salon.firebasestorage.app', messagingSenderId: '64990376037', appId: '1:64990376037:web:8d9f0b212e7a53be6b168c', measurementId: 'G-7ZPDE53CVZ' };
