@@ -3,7 +3,7 @@
    - التحديث لا يُطبَّق أبدًا من تلقاء نفسه: الإصدار الجديد يُحمَّل في الانتظار، والتطبيق يظل يفتح من
      الإصدار المؤكَّد (accepted) حتى لو أُغلق وفُتح، إلى أن يضغط المستخدم «تحديث» ويؤكد أنه نزّل نسخة احتياطية
    - بيانات الفواتير في LocalStorage/IndexedDB وليست في الكاش */
-const VERSION = 'v3.3.1';
+const VERSION = 'v3.3.2';
 const PREFIX = 'ahmed-saeed-cashier-';
 const CACHE = PREFIX + VERSION;
 const CORE = [
