@@ -681,6 +681,7 @@ body.gated #v-cash,body.gated #v-out{pointer-events:none;user-select:none;filter
 .a4 .ft .cr .ar{color:#55162a!important}.a4 .ft .cr .en{color:#b8862f!important}
 .a4 .ft .cr .svcl{background:#55162a!important;color:#f3e4c6!important;box-shadow:inset 0 0 0 1px #e8b050}.a4 .ft .cr .svcl b{color:#e8b050!important}
 .a4 .ft{border-top-color:#e8b050!important}
+[data-brpw]{display:none!important}
 
 </style>
 </head>
@@ -2049,7 +2050,7 @@ function bind() {
   setupSW();
 })();
 /* ---------- المسحوبات والمصروفات والزيادات والمنتجات وصافي الربح ---------- */
-const mvBr = m => m.branch || MAIN;
+const mvBr = m => MAIN;
 const mvIn = (f, t, kinds) => S.moves.filter(m => m.ts >= startOf(f) && m.ts <= endOf(t) && (!repBranch || mvBr(m) === repBranch) && (!kinds || kinds.includes(m.kind)));
 const MV_NAME = { exp: 'مصروف', wd: 'مسحوب', bonus: 'زيادة' };
 const MV_CHIP = { exp: 'r', wd: 'y', bonus: 'g' };
@@ -2149,20 +2150,22 @@ function pnl(f, t) {
   const pays = S.payouts.filter(p => p.ts >= startOf(f) && p.ts <= endOf(t) && (!repBranch || (p.branch || MAIN) === repBranch));
   const revenue = r2(sum(invs, 'total')), expT = r2(sum(ex, 'amt')), woT = r2(sum(wd, 'amt')), boT = r2(sum(bo, 'amt')), ded = r2(sum(pays, 'deduction'));
   cogs = r2(cogs); shares = r2(shares);
-  const xfer = r2(Object.values(byMethod(invs)).filter(x => x.kind !== 'cash').reduce((a, x) => a + x.amt, 0)), cashIn = r2(revenue - xfer), net = r2(revenue - cogs - shares - boT - expT + ded), drawer = r2(cashIn - expT - woT);
+  const xfer = r2(Object.values(byMethod(invs)).filter(x => x.kind !== 'cash').reduce((a, x) => a + x.amt, 0)), cashIn = r2(revenue - xfer), drawer = r2(cashIn - expT - woT);
   const shifts = S.shifts.filter(s => s.closedAt >= startOf(f) && s.closedAt <= endOf(t)).sort((a, b) => a.closedAt - b.closedAt), short = r2(-sum(shifts.filter(s => s.diff < 0), 'diff')), over = r2(sum(shifts.filter(s => s.diff > 0), 'diff'));
-  return { invs, ex, wd, bo, pays, pr, drawer, xfer, cashIn, shifts, short, over, revenue, svc: r2(svc), prod: r2(prod), cogs, shares, boT, expT, woT, ded, net, grossProd: r2(prod - cogs), payable: r2(shares + boT - woT - ded), heads, units, disc: r2(sum(invs, 'disc')), cnt: invs.length };
+  /* العجز يخسّرني والزيادة تكسّبني: تدخل في صافي الربح، ونقدية الدرج الفعلية = المتوقعة + الزيادة − العجز */
+  const net = r2(revenue - cogs - shares - boT - expT + ded - short + over), drawerAfter = r2(drawer + over - short);
+  return { invs, ex, wd, bo, pays, pr, drawer, drawerAfter, xfer, cashIn, shifts, short, over, revenue, svc: r2(svc), prod: r2(prod), cogs, shares, boT, expT, woT, ded, net, grossProd: r2(prod - cogs), payable: r2(shares + boT - woT - ded), heads, units, disc: r2(sum(invs, 'disc')), cnt: invs.length };
 }
 function pnlTiles(P) {
   return `<div class="grid3" style="margin-bottom:14px">${tile('إجمالي الإيراد', cur(P.revenue), 'coins')}${tile('تكلفة المنتجات المباعة', cur(P.cogs), 'package', P.cogs ? 'neg' : '')}${tile('نصيب الصنايعية', cur(P.shares), 'users', P.shares ? 'neg' : '')}
     ${tile('الزيادات للصنايعية', cur(P.boT), 'gift', P.boT ? 'neg' : '')}${tile('مصروفات المحل', cur(P.expT), 'receipt', P.expT ? 'neg' : '')}${tile('مسحوبات الصنايعية', cur(P.woT), 'hand-coins')}
-    ${tile('خصومات على الصنايعية', cur(P.ded), 'circle-minus')}${tile('ربح المنتجات', cur(P.grossProd), 'shopping-bag', P.grossProd > 0 ? 'pos' : '')}${tile('نقدية الدرج', cur(P.drawer), 'banknote', 'pos')}${tile('إجمالي التحويلات', cur(P.xfer), 'smartphone')}${tile('العجز', cur(P.short), 'triangle-alert', P.short ? 'neg' : '')}${tile('الزيادة', cur(P.over), 'circle-plus', P.over ? 'pos' : '')}${tile('صافي الربح', cur(P.net), 'trending-up', P.net > 0 ? 'pos big' : P.net < 0 ? 'neg big' : 'big')}</div>`;
+    ${tile('خصومات على الصنايعية', cur(P.ded), 'circle-minus')}${tile('ربح المنتجات', cur(P.grossProd), 'shopping-bag', P.grossProd > 0 ? 'pos' : '')}${tile('نقدية الدرج بعد العجز/الزيادة', cur(P.drawerAfter), 'banknote', 'pos')}${tile('إجمالي التحويلات', cur(P.xfer), 'smartphone')}${tile('العجز', cur(P.short), 'triangle-alert', P.short ? 'neg' : '')}${tile('الزيادة', cur(P.over), 'circle-plus', P.over ? 'pos' : '')}${tile('صافي الربح', cur(P.net), 'trending-up', P.net > 0 ? 'pos big' : P.net < 0 ? 'neg big' : 'big')}</div>`;
 }
 const pnlRows = P => [
   ['إجمالي الإيراد (كل ما دخل من فواتير الخدمات والمنتجات)', P.revenue, 0],
   ['&nbsp;&nbsp;منها خدمات', P.svc, 2], ['&nbsp;&nbsp;منها منتجات', P.prod, 2],
   ['يُخصم: تكلفة شراء المنتجات المباعة', -P.cogs, 0], ['يُخصم: نصيب الصنايعية من الخدمات (نسبهم)', -P.shares, 0], ['يُخصم: زيادات الصنايعية', -P.boT, 0], ['يُخصم: مصروفات المحل', -P.expT, 0],
-  ['يُضاف: ما خُصم من الصنايعية في المحاسبات', P.ded, 0], ['صافي الربح', P.net, 1]];
+  ['يُضاف: ما خُصم من الصنايعية في المحاسبات', P.ded, 0], ['يُخصم: عجز الدرج في الورديات', -P.short, 0], ['يُضاف: زيادة الدرج في الورديات', P.over, 0], ['صافي الربح', P.net, 1]];
 
 /* ----- تبويب المدير: مسحوبات ومصروفات وزيادات ----- */
 function drawMv() {
@@ -2210,7 +2213,7 @@ function buildFull() {
   const html = a4HTML({ title: 'كشف الحساب الشامل', info: [['الفترة', `<span class="ltr num">${periodTxt(r)}</span>`], ['الفرع', esc(brn)], ['عدد الفواتير', `<span class="num">${P.cnt}</span>`], ['عدد الرؤوس', `<span class="num">${P.heads}</span>`]],
     sum: [['إجمالي الإيراد', cur(P.revenue)], ['المصروفات', cur(P.expT)], ['مستحقات الصنايعية', cur(P.shares)], ['صافي الربح', cur(P.net), 1]],
     body: `<h3 class="sec">من الإيراد إلى صافي الربح</h3>${a4Table(['البند', 'المبلغ'], pnlRows(P).map(x => [x[2] === 1 ? `<b>${x[0]}</b>` : x[0], x[2] === 1 ? `<b>${money(x[1])}</b>` : money(x[1])]))}
-      <h3 class="sec">نقدية الدرج (للتسليم)</h3>${a4Table(['البند', 'المبلغ'], [['إجمالي الإيراد (نقدي + تحويلات)', money(P.revenue)], ['منه: إيراد نقدي', money(P.cashIn)], ['منه: إجمالي التحويلات (فودافون كاش / إنستا باي)', money(P.xfer)], ['يُخصم من النقدي: مصروفات المحل', '- ' + money(P.expT)], ['يُخصم من النقدي: مسحوبات الصنايعية', '- ' + money(P.woT)], ['<b>نقدية الدرج (النقدي فقط)</b>', `<b>${money(P.drawer)}</b>`]])}<h3 class="sec">الورديات: العجز والزيادة</h3>${P.shifts.length ? a4Table(['#', 'النوع', 'الكاشير', 'تاريخ التقفيل', 'المتوقع نقداً', 'الفعلي', 'الفارق'], P.shifts.map(s => [s.no, s.type === 'day' ? 'تصفية يوم' : 'وردية', esc(s.cashier), `<span class="ltr num">${fmtDT(s.closedAt)}</span>`, money(s.expected), money(s.actual), s.diff === 0 ? 'مطابق' : s.diff < 0 ? 'عجز ' + money(-s.diff) : 'زيادة ' + money(s.diff)]), ['', '', '', '', '', 'العجز / الزيادة', `${money(P.short)} / ${money(P.over)}`]) : '<div class="note">لا توجد ورديات مقفلة في الفترة.</div>'}
+      <h3 class="sec">نقدية الدرج (للتسليم)</h3>${a4Table(['البند', 'المبلغ'], [['إجمالي الإيراد (نقدي + تحويلات)', money(P.revenue)], ['منه: إيراد نقدي', money(P.cashIn)], ['منه: إجمالي التحويلات (فودافون كاش / إنستا باي)', money(P.xfer)], ['يُخصم من النقدي: مصروفات المحل', '- ' + money(P.expT)], ['يُخصم من النقدي: مسحوبات الصنايعية', '- ' + money(P.woT)], ['نقدية الدرج المتوقعة (النقدي فقط)', money(P.drawer)], ['العجز (−) / الزيادة (+) في الورديات', (P.over - P.short >= 0 ? '+ ' : '- ') + money(Math.abs(r2(P.over - P.short)))], ['<b>نقدية الدرج بعد العجز/الزيادة</b>', `<b>${money(P.drawerAfter)}</b>`]])}<h3 class="sec">الورديات: العجز والزيادة</h3>${P.shifts.length ? a4Table(['#', 'النوع', 'الكاشير', 'تاريخ التقفيل', 'المتوقع نقداً', 'الفعلي', 'الفارق'], P.shifts.map(s => [s.no, s.type === 'day' ? 'تصفية يوم' : 'وردية', esc(s.cashier), `<span class="ltr num">${fmtDT(s.closedAt)}</span>`, money(s.expected), money(s.actual), s.diff === 0 ? 'مطابق' : s.diff < 0 ? 'عجز ' + money(-s.diff) : 'زيادة ' + money(s.diff)]), ['', '', '', '', '', 'العجز / الزيادة', `${money(P.short)} / ${money(P.over)}`]) : '<div class="note">لا توجد ورديات مقفلة في الفترة.</div>'}
       <div class="note" style="margin-top:6px">مسحوبات الصنايعية (${money(P.woT)} ج.م) سُلَف من حساب الصنايعية وتُخصم من مستحقاتهم عند المحاسبة، لذلك لا تُخصم من الربح مرتين. صافي ما يُستحق للصنايعية بعد الزيادات والمسحوبات والخصومات: <b>${money(P.payable)} ج.م</b>.</div>
       <h3 class="sec">مصروفات المحل بالأسباب</h3>${moveTable(P.ex, false)}
       <h3 class="sec">مسحوبات الصنايعية بالأسباب</h3>${moveTable(P.wd, true)}
@@ -2504,8 +2507,9 @@ async function clAsk(force) {
   if (!CL.user || CL.go || askBusy || !navigator.onLine) return; if (!force && Date.now() - askLast < 600000) return;
   askBusy = true; askLast = Date.now();
   try {
-    const ok = await confirmBox({ title: 'اتصلت بالإنترنت — مزامنة البيانات؟', icon: 'cloud', ok: 'مزامنة بدون تنزيل', no: 'لاحقًا', body: 'هل تريد مزامنة البيانات مع الأجهزة الأخرى الآن؟<br><b>يرجى العلم: خذ نسخة احتياطية من بيانات هذا الجهاز قبل المزامنة.</b> (النسخة هي ما على جهازك الآن، لتعود لها لو احتجت)<div style="margin-top:12px"><button class="btn pri" data-bkdl style="width:100%">' + ic('download') + 'تنزيل نسخة احتياطية الآن</button></div><div class="note" style="margin-top:10px">المزامنة لا تبدأ إلا بعد إدخال كلمة مرور المدير. إن اخترت «لاحقًا» تبقى بياناتك على هذا الجهاز كما هي.</div>' });
+    const ok = await confirmBox({ title: 'لقد اتصلت بالواي فاي', icon: 'cloud', ok: 'نعم، زامِن', no: 'لا', body: 'هل تريد مزامنة البيانات الآن؟<br><b>عند الموافقة تُنزَّل نسخة احتياطية من بيانات هذا الجهاز تلقائيًا، ثم تُدخل كلمة مرور المدير لتبدأ المزامنة.</b><div class="note" style="margin-top:10px">إن اخترت «لا» لا تحدث مزامنة ولا تنزيل، وتبقى بياناتك على هذا الجهاز كما هي.</div>' });
     if (!ok) { clSet('wait'); return; }
+    try { toast('تم تنزيل نسخة احتياطية: ' + backupNow()); } catch (e) { toast('تعذّر تنزيل النسخة الاحتياطية — لم تبدأ المزامنة', true); clSet('wait'); return; }
     if (!(await requireAuth('أدخل كلمة مرور المدير لبدء المزامنة'))) { toast('لم تبدأ المزامنة — كلمة المرور غير صحيحة', true); clSet('wait'); return; }
     CL.go = true; clStart(); toast('بدأت المزامنة');
   } finally { askBusy = false; }
@@ -2638,13 +2642,13 @@ const brRef = id => id === MAIN ? S.salon : S.branches.find(b => b.id === id);
 const allBranches = () => [{ id: MAIN, name: S.salon.name || 'الفرع الرئيسي', addr: S.salon.addr, phones: S.salon.phones, main: true }, ...S.branches].map(b => ({ ...b, ref: brRef(b.id) }));
 const getBranch = id => allBranches().find(b => b.id === id) || allBranches()[0];
 const multiBr = () => S.branches.length > 0;
-const invBr = i => i.branch || MAIN;
+const invBr = i => MAIN; /* النظام لفرع واحد: كل العمليات تُحتسب معًا */
 const brName = id => getBranch(id).name;
-const cashBarbers = () => { const l = S.barbers.filter(b => !b.branch || b.branch === curBranch); return l.length ? l : S.barbers; };
+const cashBarbers = () => S.barbers;
 const brHasPw = id => { const r = brRef(id); return !!(r && r.pw && r.pw.hash); };
 function updateBranchUI() {
-  const c = $('#brChip'); if (!c) return; c.classList.toggle('hidden', !multiBr()); if (multiBr()) $('#brChipT').textContent = brName(curBranch);
-  document.title = 'Ahmed Said | ' + (multiBr() ? brName(curBranch) : 'كاشير الصالون');
+  const c = $('#brChip'); if (c) c.classList.add('hidden');
+  document.title = 'Ahmed Said | ' + (S.salon.name ? S.salon.name : 'كاشير الصالون');
 }
 async function brCheck(id, pw) {
   SEC.brf = SEC.brf || {}; const f = SEC.brf[id] || (SEC.brf[id] = { n: 0, until: 0 }), r = brRef(id);
@@ -2689,13 +2693,16 @@ function showBranchGate(force) {
 }
 function initBranch() {
   let id = null; try { id = sessionStorage.getItem('as_br'); } catch (e) {}
+  curBranch = MAIN; updateBranchUI(); return;
   if (!multiBr()) { curBranch = MAIN; updateBranchUI(); return; }
   if (id && brRef(id)) { curBranch = id; updateBranchUI(); return; }
   curBranch = S.settings.lastBranch && brRef(S.settings.lastBranch) ? S.settings.lastBranch : MAIN; showBranchGate();
 }
 
 /* manager: branch filter + comparison */
-function branchBar() {
+function branchBar() { repBranch = ''; return '';
+}
+function branchBarOld() {
   if (!multiBr()) return '';
   if (repBranch && !brRef(repBranch)) repBranch = '';
   const pills = [['', 'كل الفروع'], ...allBranches().map(b => [b.id, b.name])];
@@ -2723,8 +2730,8 @@ function brPwForm(id) {
 const CONN = { system: 'طابعة النظام (USB/شبكة عبر ويندوز أو أندرويد)', usb: 'USB مباشر', serial: 'منفذ تسلسلي / COM', bluetooth: 'بلوتوث', network: 'شبكة (IP)' };
 const prnLine = p => p ? `${esc(p.name || 'بدون اسم')} — ${esc(CONN[p.conn] || '')} — ${p.paper || 80}mm${p.vid ? ` — VID:${esc(p.vid)} PID:${esc(p.pid)}` : ''}${p.ip ? ` — ${esc(p.ip)}` : ''}` : 'لم تُضف طابعة';
 function prnTab() {
-  return `<div class="alertbox info">${ic('info', 'lg')}<span>لكل فرع طابعته. أدخل البيانات يدويًا أو اضغط «قراءة من الجهاز» أثناء توصيل الطابعة. الطباعة نفسها تتم عبر طابعة النظام الافتراضية على جهاز الفرع (Gainscha GA-E200I بحجم 80mm)، وبيانات الطابعة هنا للتوثيق ومطابقة الجهاز بالفرع.</span></div>` +
-    allBranches().map(b => `<div class="card pad" style="margin-bottom:10px"><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="ico c${b.main ? 1 : 5}" style="width:44px;height:44px;border-radius:14px">${ic('printer')}</span><div style="flex:1;min-width:200px"><b style="font-family:var(--disp);font-size:16px">${esc(b.name)}</b><div style="color:var(--mut);margin-top:3px;font-size:13px;line-height:1.7">${prnLine(b.ref.printer)}</div></div><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm pri" data-prn="edit:${esc(b.id)}">${ic('pencil')}${b.ref.printer ? 'تعديل' : 'إضافة طابعة'}</button><button class="btn sm" data-prn="test:${esc(b.id)}">${ic('printer')}طباعة تجريبية</button>${b.ref.printer ? `<button class="btn sm red ic" data-prn="del:${esc(b.id)}">${ic('trash-2')}</button>` : ''}</span></div></div>`).join('');
+  return `<div class="alertbox info">${ic('info', 'lg')}<span>الطابعة واحدة لفرعك الحالي ويمكنك تعديل بياناتها. أدخل البيانات يدويًا أو اضغط «قراءة من الجهاز» أثناء توصيل الطابعة. الطباعة نفسها تتم عبر طابعة النظام الافتراضية على جهاز الفرع (Gainscha GA-E200I بحجم 80mm)، وبيانات الطابعة هنا للتوثيق ومطابقة الجهاز بالفرع.</span></div>` +
+    [allBranches()[0]].map(b => `<div class="card pad" style="margin-bottom:10px"><div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><span class="ico c${b.main ? 1 : 5}" style="width:44px;height:44px;border-radius:14px">${ic('printer')}</span><div style="flex:1;min-width:200px"><b style="font-family:var(--disp);font-size:16px">${esc(b.name)}</b><div style="color:var(--mut);margin-top:3px;font-size:13px;line-height:1.7">${prnLine(b.ref.printer)}</div></div><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm pri" data-prn="edit:${esc(b.id)}">${ic('pencil')}${b.ref.printer ? 'تعديل' : 'إضافة طابعة'}</button><button class="btn sm" data-prn="test:${esc(b.id)}">${ic('printer')}طباعة تجريبية</button>${b.ref.printer ? `<button class="btn sm red ic" data-prn="del:${esc(b.id)}">${ic('trash-2')}</button>` : ''}</span></div></div>`).join('');
 }
 function prnForm(id) {
   const r = brRef(id), p = r.printer || (id === MAIN ? { ...defState().salon.printer } : { conn: 'usb', paper: 80 });
@@ -2811,7 +2818,7 @@ function salonTab() {
   const phs = ph => ph.map(x => `<span class="chip b num" dir="ltr">${ic('phone')}${esc(x)}</span>`).join(' ') || '<span class="chip">لا أرقام</span>';
   return `<div class="alertbox info">${ic('info', 'lg')}<span>العنوان وأرقام الهاتف وعناوين الفروع تظهر تلقائياً على الفاتورة المطبوعة وكشوف الحساب.</span></div>
    <div class="card pad" style="margin-bottom:14px"><div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap"><span class="ico c1" style="width:44px;height:44px;border-radius:14px">${ic('map-pin')}</span><div style="flex:1;min-width:200px"><b style="font-family:var(--disp);font-size:17px">${esc(S.salon.name || 'الفرع الرئيسي')}</b> <span class="chip">رئيسي</span><div style="margin:6px 0">${esc(si.addr)}</div><div style="display:flex;gap:6px;flex-wrap:wrap">${phs(si.phones)}</div></div><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" data-brpw="main">${ic(brHasPw('main') ? 'lock' : 'lock-open')}${brHasPw('main') ? 'تغيير كلمة المرور' : 'كلمة مرور الفرع'}</button><button class="btn pri" data-sal="main">${ic('pencil')}تعديل البيانات</button></span></div></div>
-   <div class="tools" style="margin-top:0"><button class="btn pri" data-sal="br:">${ic('plus')}إضافة فرع</button></div>` +
+   <div class="tools" style="margin-top:0"><button class="btn pri" data-sal="br:">${ic("plus")}إضافة فرع (يظهر في الفاتورة فقط)</button></div>` +
     (S.branches.length ? S.branches.map(b => `<div class="card pad" style="margin-bottom:10px"><div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap"><span class="ico c5" style="width:44px;height:44px;border-radius:14px">${ic('store')}</span><div style="flex:1;min-width:200px"><b style="font-family:var(--disp);font-size:16px">${esc(b.name || 'فرع')}</b><div style="margin:6px 0">${esc(b.addr || '—')}</div><div style="display:flex;gap:6px;flex-wrap:wrap">${phs(b.phones || [])}</div></div><span style="display:flex;gap:6px;flex-wrap:wrap"><button class="btn sm" data-brpw="${b.id}">${ic(brHasPw(b.id) ? 'lock' : 'lock-open')}${brHasPw(b.id) ? 'تغيير كلمة المرور' : 'كلمة مرور الفرع'}</button><button class="btn sm" data-sal="br:${b.id}">${ic('pencil')}تعديل</button><button class="btn sm red ic" data-sal="del:${b.id}">${ic('trash-2')}</button></span></div></div>`).join('') : '<div class="card"><div class="empty">لا توجد فروع مضافة</div></div>');
 }
 function salonForm(kind, id) {
