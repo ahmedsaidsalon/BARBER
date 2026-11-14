@@ -1016,7 +1016,8 @@ async function setPw(pw, type) { SEC.pts = Date.now(); SEC.salt = newSalt(); SEC
 
 /* ---------- Business helpers ---------- */
 const barberName = id => (S.barbers.find(b => b.id === id) || {}).name || '—';
-const barberPct = id => { const b = S.barbers.find(x => x.id === id); return (b && b.pct != null && b.pct !== '') ? +b.pct : 100 - (+S.settings.shopPct || 0); };
+const isDaily = b => !!b && b.mode === 'daily';
+const barberPct = id => { const b = S.barbers.find(x => x.id === id); if (isDaily(b)) return 0; return (b && b.pct != null && b.pct !== '') ? +b.pct : 100 - (+S.settings.shopPct || 0); };
 const openInvoices = () => S.invoices.filter(i => !i.shift && invBr(i) === curBranch);
 const sum = (a, k) => a.reduce((x, i) => x + (+i[k] || 0), 0);
 const svcIcon = n => { n = norm(n); return /صبغ/.test(n) ? 'droplets' : /استشوار/.test(n) ? 'wind' : /دقن|خيط/.test(n) ? 'razor' : /اطفال/.test(n) ? 'user' : /تنظيف/.test(n) ? 'sparkles' : /ويفي|كيرلي/.test(n) ? 'brush' : 'scissors'; };
@@ -1343,7 +1344,7 @@ function payoutHTML(p) {
   return `<div class="rc">${rcHead('إيصال محاسبة صنايعي', p.no)}
     <div class="grid">${kv('التاريخ', `<span class="num" dir="ltr">${fmtD(p.ts)}</span>`)}${kv('الوقت', `<span class="num" dir="ltr">${fmtT(p.ts)}</span>`)}${kv('الصنايعي', esc(p.barberName))}${kv('عن الفترة', `<span class="num" dir="ltr">${p.from === p.to ? p.from : p.from + ' ← ' + p.to}</span>`)}</div>
     <div class="items"><div class="tl"><span>عدد الرؤوس</span><span class="num">${p.heads}</span></div><div class="tl"><span>إجمالي الدخل</span><span class="num">${money(p.rev)}</span></div>
-    <div class="tl"><span>مستحقه</span><span class="num">${money(p.due)}</span></div>${(p.lines || []).map(l => `<div class="tl"><span>${l.k === 'bonus' ? 'زيادة' : 'مسحوب'}${l.reason ? ' (' + esc(l.reason) + ')' : ''}</span><span class="num">${l.k === 'bonus' ? '+' : '-'} ${money(l.amt)}</span></div>`).join('')}${p.deduction > 0 ? `<div class="tl"><span>خصم${p.reason ? ' (' + esc(p.reason) + ')' : ''}</span><span class="num">- ${money(p.deduction)}</span></div>` : ''}</div>
+    <div class="tl"><span>${p.mode === 'daily' ? 'يومية (' + p.days + ' يوم)' : 'مستحقه'}</span><span class="num">${money(p.due)}</span></div>${(p.lines || []).map(l => `<div class="tl"><span>${l.k === 'bonus' ? 'زيادة' : l.k === 'ded' ? 'خصم' : 'مسحوب'}${l.reason ? ' (' + esc(l.reason) + ')' : ''}</span><span class="num">${l.k === 'bonus' ? '+' : '-'} ${money(l.amt)}</span></div>`).join('')}${(() => { const mdn = r2(p.deduction - (p.lines || []).filter(l => l.k === 'ded').reduce((a, l) => a + l.amt, 0)); return mdn > 0 ? `<div class="tl"><span>خصم${p.reason ? ' (' + esc(p.reason) + ')' : ''}</span><span class="num">- ${money(mdn)}</span></div>` : ''; })()}</div>
     <div class="grand"><span>المدفوع</span><span class="num">${money(p.net)} <small>ج.م</small></span></div>
     <div class="hatch"></div><div class="tl" style="margin-top:12px"><span>توقيع المستلم:</span><span>................</span></div>
     <div class="thx" style="margin-top:8px"><b>تم صرف المبلغ</b></div>${atharQR()}<div class="cutln">${ic('scissors')}</div><div class="zz b"></div></div>`;
@@ -1587,7 +1588,7 @@ function repClick(e) {
   const rq = t.closest('[data-rq]'); if (rq) { const k = rq.dataset.rq, d = new Date(); if (k === 'yest') d.setDate(d.getDate() - 1); range = k === 'month' ? { f: monthStart(), t: today() } : { f: dayStr(d), t: dayStr(d) }; $('#rF').value = range.f; $('#rT').value = range.t; return drawOut(); }
   const iv = t.closest('[data-iv]'); if (iv) { const [k, id] = iv.dataset.iv.split(':'), inv = S.invoices.find(i => i.id === id); if (!inv) return; if (k === 'view') showPreview('معاينة الفاتورة #' + inv.no, receiptHTML(inv), 'rc'); if (k === 'print') printDoc(receiptHTML(inv), 'p-rcpt'); if (k === 'del') deleteInvoice(id); return; }
   const a = t.closest('[data-act]'); if (!a) return; const k = a.dataset.act;
-  if (k.startsWith('wdet:')) return workerDoc(k.slice(5)); if (k === 'bonusNew') return mvForm('bonus'); if (k.startsWith('mvNew:')) return mvForm(k.slice(6)); if (k.startsWith('mvDel:')) return delMove(k.slice(6));
+  if (k.startsWith('wdet:')) return workerDoc(k.slice(5)); if (k === 'bonusNew') return mvForm('bonus'); if (k.startsWith('mvNew:')) { const q = k.slice(6).split(':'); return mvForm(q[0], q[1]); } if (k.startsWith('mvDel:')) return delMove(k.slice(6));
   if (k === 'pwnew') pwForm('create'); else if (k === 'custCsv') custCsv(); else workClick(a, k); stmtAct(k);
 }
 function drawOut() { if (repTab === 'inv') drawInv(); else if (repTab === 'mv') drawMv(); else if (repTab === 'work') drawWork(); else if (repTab === 'stmt') drawStmt(); }
@@ -1604,39 +1605,43 @@ function drawWork() {
   const pays = S.payouts.filter(p => p.ts >= startOf(r.f) && p.ts <= endOf(r.t)).sort((a, b) => b.ts - a.ts);
   $('#rOut').innerHTML = `<div class="grid3" style="margin-bottom:14px">${kp('إجمالي دخل الصنايعية', money(sum(w, 'rev')) + ' ج.م', 'coins')}${kp('مستحقاتهم', money(sum(w, 'due')) + ' ج.م', 'hand-coins')}${kp('لم تُحاسَب بعد', money(sum(w, 'unpaid')) + ' ج.م', 'clock')}${kp('نصيب المحل', money(sum(w, 'rev') - sum(w, 'due')) + ' ج.م', 'wallet')}${kp('مسحوبات الصنايعية', money(sum(w, 'wd')) + ' ج.م', 'hand-coins')}${kp('الزيادات', money(sum(w, 'bonus')) + ' ج.م', 'gift')}${kp('الخصومات', money(sum(w, 'ded')) + ' ج.م', 'circle-minus')}</div>
     <div class="tools" style="margin-top:0"><button class="btn pri" data-act="wPrev">${ic('eye')}معاينة كشف الصنايعية</button><button class="btn" data-act="wPrint">${ic('printer')}طباعة A4</button></div>` +
-    (w.length ? `<div class="two" style="margin-top:0">${w.map(x => { const paidPct = x.due > 0 ? (x.due - x.unpaid) / x.due * 100 : 0; return `<div class="wk"><div class="wk-h"><span class="av">${esc(x.name.charAt(0))}</span><div style="flex:1"><b>${esc(x.name)}</b><div style="color:var(--mut);font-size:12px">النسبة ${pctTxt(x.pct)}</div></div>${x.unpaid <= 0 && x.pendB <= 0 ? `<span class="chip g">${ic('check')}تمت المحاسبة</span>` : `<span class="chip y">${ic('clock')}مستحق</span>`}</div>
+    (w.length ? `<div class="two" style="margin-top:0">${w.map(x => { const paidPct = x.due > 0 ? (x.due - x.unpaid) / x.due * 100 : 0; return `<div class="wk"><div class="wk-h"><span class="av">${esc(x.name.charAt(0))}</span><div style="flex:1"><b>${esc(x.name)}</b><div style="color:var(--mut);font-size:12px">${x.mode === 'daily' ? 'يومية ' + money(x.daily) + ' ج.م × ' + x.days + ' يوم' : 'النسبة ' + pctTxt(x.pct)}</div></div>${x.unpaid <= 0 && x.pendB <= 0 ? `<span class="chip g">${ic('check')}تمت المحاسبة</span>` : `<span class="chip y">${ic('clock')}مستحق</span>`}</div>
       <div class="wk-g"><div><small>الرؤوس</small><b class="num">${x.heads}</b></div><div><small>الدخل</small><b class="num">${money(x.rev)}</b></div><div><small>المستحق</small><b class="num">${money(x.due)}</b></div></div>
       <div class="wk-g"><div><small>زيادات</small><b class="num">${money(x.bonus)}</b></div><div><small>مسحوبات</small><b class="num">${money(x.wd)}</b></div><div><small>خصومات</small><b class="num">${money(x.ded)}</b></div></div>
       <div class="prog"><i style="width:${paidPct}%"></i></div><div style="display:flex;justify-content:space-between;margin:8px 0 12px;color:var(--mut);font-weight:600"><span>المتبقي للمحاسبة</span><b class="num" style="color:var(--tx);font-family:var(--disp);font-size:18px">${money(x.remain)} ج.م</b></div>
+      <div style="display:flex;gap:8px;margin-bottom:8px"><button class="btn sm" style="flex:1" data-act="mvNew:bonus:${esc(x.id)}">${ic('gift')}زيادة</button><button class="btn sm" style="flex:1" data-act="mvNew:ded:${esc(x.id)}">${ic('circle-minus')}خصم${x.pendD ? ' (' + money(x.pendD) + ')' : ''}</button></div>
       <button class="btn" style="width:100%;margin-bottom:8px" data-act="wdet:${esc(x.id)}">${ic('list')}تفاصيل ${esc(x.name)} (كل ما عمله)</button>
       <button class="btn ${x.remain > 0 || x.pendB > 0 || x.unpaid > 0 ? 'ok' : ''}" style="width:100%" ${x.remain > 0 || x.pendB > 0 || x.unpaid > 0 ? '' : 'disabled'} data-act="settle:${esc(x.id)}">${ic('hand-coins')}محاسبة ${esc(x.name)}</button></div>`; }).join('')}</div>` : '<div class="card"><div class="empty">لا توجد مبيعات في هذه الفترة</div></div>') +
     `<h3 class="cut" style="margin:22px 0 8px">${ic('receipt')}إيصالات المحاسبة في الفترة</h3>` +
     (pays.length ? `<div class="card"><div class="tscroll"><table><thead><tr><th>#</th><th>التاريخ والوقت</th><th>الصنايعي</th><th>عن الفترة</th><th class="n">رؤوس</th><th class="n">المستحق</th><th class="n">زيادات</th><th class="n">مسحوبات</th><th class="n">الخصم</th><th class="n">المدفوع</th><th class="n">إجراءات</th></tr></thead><tbody>${pays.map(p => `<tr><td class="num">${p.no}</td><td dir="ltr" style="text-align:start;font-size:12.5px">${fmtDT(p.ts)}</td><td><b>${esc(p.barberName)}</b></td><td dir="ltr" style="text-align:start;font-size:12.5px">${p.from === p.to ? p.from : p.from + ' ← ' + p.to}</td><td class="n num">${p.heads}</td><td class="n num">${money(p.due)}</td><td class="n num">${p.bonus ? "+ " + money(p.bonus) : "—"}</td><td class="n num">${p.wd ? "- " + money(p.wd) : "—"}</td><td class="n num">${p.deduction > 0 ? '<span style="color:var(--red)">- ' + money(p.deduction) + '</span>' + (p.reason ? '<br><small style="color:var(--mut)">' + esc(p.reason) + '</small>' : '') : '—'}</td><td class="n num"><b>${money(p.net)}</b></td><td class="n" style="white-space:nowrap"><button class="btn sm ic" data-act="pv:${p.id}" title="معاينة">${ic('eye')}</button> <button class="btn sm ic" data-act="pp:${p.id}" title="طباعة">${ic('printer')}</button> <button class="btn sm ic red" data-act="pu:${p.id}" title="إلغاء المحاسبة">${ic('undo-2')}</button></td></tr>`).join('')}</tbody></table></div></div>` : '<div class="card"><div class="empty">لا توجد إيصالات محاسبة في هذه الفترة</div></div>');
 }
-function settlePlan(bid, f, t, dedIn) {
-  const items = unpaidItems(bid, f, t), due = r2(sum(items, 'share')), rev = r2(sum(items, 'rev')), heads = items.reduce((a, i) => a + i.qty, 0);
+function settlePlan(bid, f, t, dedIn, dDays) {
+  const bo0 = S.barbers.find(b => b.id === bid), dUn = isDaily(bo0) ? dailyUnpaidDays(bid, f, t) : [], dAll = isDaily(bo0) ? dayKeysOf(bid, f, t) : [], dN = (dDays != null && dDays !== '' && isDaily(bo0)) ? Math.max(0, Math.floor(+dDays || 0)) : dUn.length, dWage = isDaily(bo0) ? r2((+bo0.daily || 0) * dN) : 0;
+  const items = unpaidItems(bid, f, t), due = r2(sum(items, 'share') + dWage), rev = r2(sum(items, 'rev')), heads = items.reduce((a, i) => a + i.qty, 0);
   const pend = S.moves.filter(m => !m.settled && m.barber === bid && m.ts <= endOf(t)).sort((a, b) => a.ts - b.ts);
   const bons = pend.filter(m => m.kind === 'bonus'), bonus = r2(sum(bons, 'amt')), budget = r2(due + bonus);
   let acc = 0; const wds = [], carry = []; pend.filter(m => m.kind === 'wd').forEach(m => { if (r2(acc + m.amt) <= budget) { acc = r2(acc + m.amt); wds.push(m); } else carry.push(m); });
-  const wd = r2(acc), ded = Math.min(Math.max(+dedIn || 0, 0), r2(budget - wd));
-  return { items, due, rev, heads, bons, bonus, wds, wd, carry, ded: r2(ded), net: r2(budget - wd - ded), can: items.length > 0 || bons.length > 0 };
+  const dds = pend.filter(m => m.kind === 'ded'), dPend = r2(sum(dds, 'amt'));
+  const wd = r2(acc), dedAll = Math.min(r2(dPend + Math.max(+dedIn || 0, 0)), r2(budget - wd)), ded = Math.max(0, dedAll);
+  return { items, due, rev, heads, bons, bonus, wds, wd, carry, dds, dPend, ded: r2(ded), dedManual: r2(Math.max(0, ded - dPend)), net: r2(budget - wd - ded), dN, dUn, dAll, daily: isDaily(bo0), dWage, can: items.length > 0 || bons.length > 0 || dds.length > 0 || dUn.length > 0 || dN > 0 };
 }
 function settleForm(bid) {
   const r = readRange(), name = (S.barbers.find(b => b.id === bid) || {}).name || (S.invoices.flatMap(i => i.items).find(i => i.barber === bid) || {}).barberName || '—';
   openForm('محاسبة الصنايعي: ' + name, 'hand-coins', `<div class="row"><div><label class="f">من تاريخ</label><input type="date" class="inp" id="sF" value="${r.f}"></div><div><label class="f">إلى تاريخ</label><input type="date" class="inp" id="sT" value="${r.t}"></div></div>
-    <div id="sInfo" style="margin:14px 0"></div>
-    <div class="row"><div><label class="f">خصم من اليومية (جنيه)</label><input class="inp num" id="sDed" type="number" min="0" step="any" inputmode="decimal" placeholder="0"></div><div><label class="f">سبب الخصم (اختياري)</label><input class="inp" id="sRes" maxlength="60" placeholder="مثال: تأخير"></div></div>
+    <div id="sDays"></div><div id="sInfo" style="margin:14px 0"></div>
+    <div class="row"><div><label class="f">خصم إضافي الآن (جنيه) — غير الخصومات المسجّلة</label><input class="inp num" id="sDed" type="number" min="0" step="any" inputmode="decimal" placeholder="0"></div><div><label class="f">سبب الخصم (اختياري)</label><input class="inp" id="sRes" maxlength="60" placeholder="مثال: تأخير"></div></div>
     <div class="total" style="margin:14px 0 0"><small>المبلغ الذي سيُسلَّم للصنايعي</small><div class="big num" style="font-size:42px"><span id="sNet">0</span><em>ج.م</em></div></div>`, () => {
     const f = $('#sF').value, t = $('#sT').value; if (!f || !t) { toast('اختر الفترة', true); return false; }
-    const a = f <= t ? f : t, b = f <= t ? t : f, pl = settlePlan(bid, a, b, $('#sDed').value); if (!pl.can) { toast('لا توجد بنود غير محاسبة في هذه الفترة', true); return false; }
-    const lines = [...pl.bons.map(m => ({ k: 'bonus', amt: m.amt, reason: m.reason })), ...pl.wds.map(m => ({ k: 'wd', amt: m.amt, reason: m.reason }))];
-    const p = { id: uid(), no: ++S.counters.payout, ts: Date.now(), barber: bid, barberName: name, from: a, to: b, heads: pl.heads, rev: pl.rev, due: pl.due, bonus: pl.bonus, wd: pl.wd, lines, deduction: pl.ded, reason: $('#sRes').value.trim(), net: pl.net, branch: repBranch || curBranch };
-    pl.items.forEach(i => i.paid = p.id); [...pl.bons, ...pl.wds].forEach(m => m.settled = p.id); S.payouts.push(p); save(); drawWork(); toast(`تمت محاسبة ${name} — المدفوع ${money(p.net)} ج.م`); setTimeout(() => showPreview('إيصال محاسبة #' + p.no, payoutHTML(p), 'rc'), 250);
+    const a = f <= t ? f : t, b = f <= t ? t : f, pl = settlePlan(bid, a, b, $('#sDed').value, $('#sDn') ? $('#sDn').value : null); if (!pl.can) { toast('لا توجد بنود غير محاسبة في هذه الفترة', true); return false; }
+    const lines = [...pl.bons.map(m => ({ k: 'bonus', amt: m.amt, reason: m.reason })), ...pl.wds.map(m => ({ k: 'wd', amt: m.amt, reason: m.reason })), ...pl.dds.map(m => ({ k: 'ded', amt: m.amt, reason: m.reason }))];
+    const p = { id: uid(), no: ++S.counters.payout, ts: Date.now(), barber: bid, barberName: name, from: a, to: b, heads: pl.heads, rev: pl.rev, due: pl.due, bonus: pl.bonus, wd: pl.wd, lines, deduction: pl.ded, reason: $('#sRes').value.trim(), net: pl.net, mode: pl.daily ? 'daily' : 'pct', days: pl.daily ? pl.dN : 0, dayKeys: pl.daily ? pl.dAll : [], dWage: pl.dWage, branch: repBranch || curBranch };
+    pl.items.forEach(i => i.paid = p.id); [...pl.bons, ...pl.wds, ...pl.dds].forEach(m => m.settled = p.id); S.payouts.push(p); save(); drawWork(); toast(`تمت محاسبة ${name} — المدفوع ${money(p.net)} ج.م`); setTimeout(() => showPreview('إيصال محاسبة #' + p.no, payoutHTML(p), 'rc'), 250);
   }, 'تأكيد المحاسبة');
   const calc = () => {
-    const f = $('#sF').value || r.f, t = $('#sT').value || r.t, pl = settlePlan(bid, f <= t ? f : t, f <= t ? t : f, $('#sDed').value), k = (l, v, cl) => `<div class="kpi" style="padding:12px 16px"><small>${l}</small><b class="num" style="font-size:21px;${cl || ''}">${v}</b></div>`;
+    const f = $('#sF').value || r.f, t = $('#sT').value || r.t; if (isDaily(S.barbers.find(b => b.id === bid)) && !$('#sDn')) { const u = dailyUnpaidDays(bid, f <= t ? f : t, f <= t ? t : f).length; $('#sDays').innerHTML = `<label class="f">عدد أيام العمل (يومية ${money((S.barbers.find(b => b.id === bid) || {}).daily)} ج.م لليوم)</label><input class="inp num" id="sDn" type="number" min="0" step="1" value="${u}"><div style="font-size:12px;color:var(--mut);margin:4px 0 10px">محسوبة تلقائيًا من الأيام التي سُجِّلت له فيها خدمات — عدّلها لو حضر أيامًا دون مبيعات.</div>`; $('#sDn').addEventListener('input', calc); }
+    const pl = settlePlan(bid, f <= t ? f : t, f <= t ? t : f, $('#sDed').value, $('#sDn') ? $('#sDn').value : null), k = (l, v, cl) => `<div class="kpi" style="padding:12px 16px"><small>${l}</small><b class="num" style="font-size:21px;${cl || ''}">${v}</b></div>`;
     const lst = (arr, sg) => arr.length ? `<div style="font-size:12.5px;color:var(--mut);margin-top:4px">${arr.map(m => `${sg} ${money(m.amt)} — ${esc(m.reason)}`).join('<br>')}</div>` : '';
-    $('#sInfo').innerHTML = `<div class="grid3">${k('الرؤوس', pl.heads)}${k('الدخل', money(pl.rev))}${k('المستحق (نسبته)', money(pl.due))}${k('زيادات', '+ ' + money(pl.bonus))}${k('مسحوبات', '- ' + money(pl.wd), pl.wd ? 'color:var(--red);-webkit-text-fill-color:var(--red)' : '')}</div>${lst(pl.bons, '+')}${lst(pl.wds, '-')}${pl.carry.length ? `<div class="alertbox info" style="margin-top:8px"><span>مسحوبات أكبر من المستحق (${money(sum(pl.carry, 'amt'))} ج.م) تُرحَّل للمحاسبة القادمة.</span></div>` : ''}`;
+    $('#sInfo').innerHTML = `<div class="grid3">${k('الرؤوس', pl.heads)}${k('الدخل', money(pl.rev))}${k(pl.daily ? 'المستحق (يومية + نسبة)' : 'المستحق (نسبته)', money(pl.due))}${k('زيادات', '+ ' + money(pl.bonus))}${k('مسحوبات', '- ' + money(pl.wd), pl.wd ? 'color:var(--red);-webkit-text-fill-color:var(--red)' : '')}${k('خصومات مسجّلة', '- ' + money(pl.dPend), pl.dPend ? 'color:var(--red);-webkit-text-fill-color:var(--red)' : '')}</div>${lst(pl.bons, '+')}${lst(pl.wds, '-')}${lst(pl.dds, '-')}${pl.carry.length ? `<div class="alertbox info" style="margin-top:8px"><span>مسحوبات أكبر من المستحق (${money(sum(pl.carry, 'amt'))} ج.م) تُرحَّل للمحاسبة القادمة.</span></div>` : ''}`;
     $('#sNet').textContent = money(pl.net);
   };
   ['#sF', '#sT', '#sDed'].forEach(s => $(s).addEventListener('input', calc)); ['#sF', '#sT'].forEach(s => $(s).addEventListener('change', calc)); calc();
@@ -1715,7 +1720,7 @@ function drawSet() {
   } else if (setTab === 'bun') {
     box.innerHTML = `<div class="tools" style="margin-top:0"><button class="btn pri" data-edit="b:">${ic('plus')}باقة جديدة</button></div>` + tbl(['الباقة', 'تشمل', 'السعر', 'الاختصار', ''], S.bundles.map(b => `<tr><td><b>${esc(b.name)}</b></td><td>${esc((b.items || []).map(i => (S.services.find(s => s.id === i) || {}).name).filter(Boolean).join(' + ')) || '—'}</td><td class="num">${money(b.price)} ج.م</td><td>${b.key ? '<kbd>' + esc(b.key) + '</kbd>' : '—'}</td><td class="n" style="white-space:nowrap"><button class="btn sm" data-edit="b:${b.id}">${ic('pencil')}تعديل</button> <button class="btn sm red ic" data-del="b:${b.id}">${ic('trash-2')}</button></td></tr>`));
   } else if (setTab === 'bar') {
-    box.innerHTML = `<div class="tools" style="margin-top:0"><button class="btn pri" data-edit="w:">${ic('plus')}صنايعي جديد</button></div>` + tbl(['الصنايعي', 'نسبته من الرأس', ''], S.barbers.map(b => `<tr><td><b>${esc(b.name)}</b></td><td>${b.pct != null && b.pct !== '' ? '<span class="num">' + b.pct + '%</span>' : '<span class="chip">العامة ' + (100 - st.shopPct) + '%</span>'}</td><td class="n" style="white-space:nowrap"><button class="btn sm" data-edit="w:${b.id}">${ic('pencil')}تعديل</button> <button class="btn sm red ic" data-del="w:${b.id}">${ic('trash-2')}</button></td></tr>`));
+    box.innerHTML = `<div class="tools" style="margin-top:0"><button class="btn pri" data-edit="w:">${ic('plus')}صنايعي جديد</button></div>` + tbl(['الصنايعي', 'طريقة المحاسبة', ''], S.barbers.map(b => `<tr><td><b>${esc(b.name)}</b></td><td>${isDaily(b) ? '<span class="chip g">يومية ' + money(b.daily) + ' ج.م</span>' : b.pct != null && b.pct !== '' ? '<span class="num">' + b.pct + '%</span>' : '<span class="chip">العامة ' + (100 - st.shopPct) + '%</span>'}</td><td class="n" style="white-space:nowrap"><button class="btn sm" data-edit="w:${b.id}">${ic('pencil')}تعديل</button> <button class="btn sm red ic" data-del="w:${b.id}">${ic('trash-2')}</button></td></tr>`));
   } else if (setTab === 'prd') {
     drawProdTab(box);
   } else if (setTab === 'pay') {
@@ -1748,10 +1753,11 @@ function editEntity(kind, id) {
     });
   } else if (kind === 'w') {
     const w = S.barbers.find(x => x.id === id) || {};
-    openForm(id ? 'تعديل صنايعي' : 'صنايعي جديد', 'users', `<label class="f">الاسم</label><input class="inp" id="fName" maxlength="30" value="${esc(w.name)}">${multiBr() ? `<label class="f" style="margin-top:12px">الفرع</label><select class="cs" id="fBr"><option value="">كل الفروع</option>${allBranches().map(b => `<option value="${esc(b.id)}" ${w.branch === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>` : ''}<label class="f" style="margin-top:12px">نسبته الخاصة من الرأس % (اتركها فارغة لاستخدام النسبة العامة ${100 - S.settings.shopPct}%)</label><input class="inp num" id="fPct" type="number" min="0" max="100" step="any" value="${w.pct ?? ''}">`, () => {
+    openForm(id ? 'تعديل صنايعي' : 'صنايعي جديد', 'users', `<label class="f">الاسم</label><input class="inp" id="fName" maxlength="30" value="${esc(w.name)}">${multiBr() ? `<label class="f" style="margin-top:12px">الفرع</label><select class="cs" id="fBr"><option value="">كل الفروع</option>${allBranches().map(b => `<option value="${esc(b.id)}" ${w.branch === b.id ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>` : ''}<label class="f" style="margin-top:12px">طريقة المحاسبة</label><select class="cs" id="fMode"><option value="pct" ${isDaily(w) ? '' : 'selected'}>نسبة من الرأس</option><option value="daily" ${isDaily(w) ? 'selected' : ''}>يومية ثابتة</option></select><div id="fPctBox"><label class="f" style="margin-top:12px">نسبته الخاصة من الرأس % (اتركها فارغة لاستخدام النسبة العامة ${100 - S.settings.shopPct}%)</label><input class="inp num" id="fPct" type="number" min="0" max="100" step="any" value="${w.pct ?? ''}"></div><div id="fDayBox" style="display:none"><label class="f" style="margin-top:12px">اليومية (جنيه لكل يوم عمل)</label><input class="inp num" id="fDaily" type="number" min="0" step="any" inputmode="decimal" value="${w.daily ?? ''}"></div>`, () => {
       const name = $('#fName').value.trim(); if (!name) { toast('اكتب الاسم', true); return false; } const pv = $('#fPct').value;
-      const o = w.id ? w : (S.barbers.push({ id: uid() }), S.barbers[S.barbers.length - 1]); Object.assign(o, { name, pct: pv === '' ? null : Math.min(100, Math.max(0, +pv)), branch: $('#fBr') ? $('#fBr').value : (o.branch || '') }); save(); drawSet(); renderCash();
+      const o = w.id ? w : (S.barbers.push({ id: uid() }), S.barbers[S.barbers.length - 1]); const dm = $('#fMode').value === 'daily'; if (dm && !(+$('#fDaily').value > 0)) { toast('اكتب مبلغ اليومية', true); return false; } Object.assign(o, { name, mode: dm ? 'daily' : 'pct', daily: dm ? +$('#fDaily').value : 0, pct: pv === '' ? null : Math.min(100, Math.max(0, +pv)), branch: $('#fBr') ? $('#fBr').value : (o.branch || '') }); save(); drawSet(); renderCash();
     });
+    { const tg = () => { const d = $('#fMode').value === 'daily'; $('#fDayBox').style.display = d ? '' : 'none'; $('#fPctBox').style.display = d ? 'none' : ''; }; $('#fMode').addEventListener('change', tg); tg(); }
   } else {
     const p = S.payMethods.find(x => x.id === id) || { kind: 'transfer', on: true };
     openForm(id ? 'تعديل طريقة دفع' : 'طريقة دفع جديدة', 'wallet', `<label class="f">اسم الطريقة</label><input class="inp" id="fName" maxlength="24" value="${esc(p.name)}" placeholder="مثال: فودافون كاش"><div class="row" style="margin-top:12px"><div><label class="f">النوع</label><select class="cs" id="fKind"><option value="cash" ${p.kind === 'cash' ? 'selected' : ''}>نقدي — يدخل الدرج</option><option value="transfer" ${p.kind === 'transfer' ? 'selected' : ''}>تحويل — لا يدخل الدرج</option></select></div></div>
@@ -2052,8 +2058,8 @@ function bind() {
 /* ---------- المسحوبات والمصروفات والزيادات والمنتجات وصافي الربح ---------- */
 const mvBr = m => MAIN;
 const mvIn = (f, t, kinds) => S.moves.filter(m => m.ts >= startOf(f) && m.ts <= endOf(t) && (!repBranch || mvBr(m) === repBranch) && (!kinds || kinds.includes(m.kind)));
-const MV_NAME = { exp: 'مصروف', wd: 'مسحوب', bonus: 'زيادة' };
-const MV_CHIP = { exp: 'r', wd: 'y', bonus: 'g' };
+const MV_NAME = { exp: 'مصروف', wd: 'مسحوب', bonus: 'زيادة', ded: 'خصم' };
+const MV_CHIP = { exp: 'r', wd: 'y', bonus: 'g', ded: 'r' };
 const mvChip = k => `<span class="chip ${MV_CHIP[k]}">${MV_NAME[k]}</span>`;
 const tone = (v, good) => v === 0 ? '' : (good ? (v > 0 ? 'pos' : 'neg') : '');
 const tile = (l, v, i, t = '') => `<div class="kpi ${t}"><small>${ic(i)}${l}</small><b class="num">${v}</b></div>`;
@@ -2125,17 +2131,23 @@ function bindMoney() {
 }
 
 /* ----- حسابات الصنايعية الشاملة ----- */
+/* الصنايعي بيومية: عدد الأيام التي عمل فيها (يوم فيه خدمة له) ولم تُحاسَب بعد */
+const dayKeysOf = (bid, f, t) => { const s = new Set(); invIn(f, t).forEach(inv => { if (inv.items.some(x => x.barber === bid && x.kind !== 'p')) s.add(dayStr(inv.ts)); }); return [...s].sort(); };
+const paidDayKeys = bid => { const s = new Set(); S.payouts.forEach(p => { if (p.barber === bid) (p.dayKeys || []).forEach(d => s.add(d)); }); return s; };
+const dailyUnpaidDays = (bid, f, t) => { const pd = paidDayKeys(bid); return dayKeysOf(bid, f, t).filter(d => !pd.has(d)); };
 function workerAcc(f, t, only) {
   let invs = invIn(f, t); if (only) invs = invs.map(i => ({ ...i, items: i.items.filter(x => x.barber === only) }));
   const m = {}; calcWorkers(invs).forEach(w => { m[w.id] = { ...w }; });
   const get = (id, name) => m[id] || (m[id] = { id, name: name || barberName(id), heads: 0, rev: 0, due: 0, unpaid: 0, pct: null });
   const mv = mvIn(f, t), pays = S.payouts.filter(p => p.ts >= startOf(f) && p.ts <= endOf(t) && (!repBranch || (p.branch || MAIN) === repBranch));
   mv.filter(x => x.barber && (x.kind === 'wd' || x.kind === 'bonus')).forEach(x => { const w = get(x.barber, x.barberName); w[x.kind === 'wd' ? 'wd' : 'bonus'] = r2((w[x.kind === 'wd' ? 'wd' : 'bonus'] || 0) + x.amt); });
+  mv.filter(x => x.barber && x.kind === 'ded' && !x.settled).forEach(x => { const w = get(x.barber, x.barberName); w.ded = r2((w.ded || 0) + x.amt); });
+  S.barbers.filter(b => isDaily(b) && (!only || b.id === only)).forEach(b => { const all = dayKeysOf(b.id, f, t), un = dailyUnpaidDays(b.id, f, t); if (!all.length && !m[b.id]) return; const w = get(b.id, b.name); w.mode = 'daily'; w.daily = +b.daily || 0; w.days = all.length; w.dailyDue = r2(w.daily * all.length); w.due = r2(w.due + w.dailyDue); w.unpaid = r2(w.unpaid + w.daily * un.length); w.pct = null; });
   pays.forEach(p => { if (p.barber && (!only || p.barber === only)) { const w = get(p.barber, p.barberName); w.ded = r2((w.ded || 0) + (p.deduction || 0)); w.paid = r2((w.paid || 0) + (p.net || 0)); } });
   return Object.values(m).filter(w => !only || w.id === only).map(w => {
-    const pend = S.moves.filter(x => !x.settled && x.barber === w.id && x.ts <= endOf(t) && (!repBranch || mvBr(x) === repBranch)), pB = r2(sum(pend.filter(x => x.kind === 'bonus'), 'amt')), pW = r2(sum(pend.filter(x => x.kind === 'wd'), 'amt'));
-    w.bonus = w.bonus || 0; w.wd = w.wd || 0; w.ded = w.ded || 0; w.paid = w.paid || 0; w.pendB = pB; w.pendW = pW;
-    w.net = r2(w.due + w.bonus - w.wd - w.ded); w.remain = r2(Math.max(0, w.unpaid + pB - Math.min(pW, w.unpaid + pB))); return w;
+    const pend = S.moves.filter(x => !x.settled && x.barber === w.id && x.ts <= endOf(t) && (!repBranch || mvBr(x) === repBranch)), pB = r2(sum(pend.filter(x => x.kind === 'bonus'), 'amt')), pW = r2(sum(pend.filter(x => x.kind === 'wd'), 'amt')), pD = r2(sum(pend.filter(x => x.kind === 'ded'), 'amt'));
+    w.bonus = w.bonus || 0; w.wd = w.wd || 0; w.ded = w.ded || 0; w.paid = w.paid || 0; w.pendB = pB; w.pendW = pW; w.pendD = pD;
+    w.net = r2(w.due + w.bonus - w.wd - w.ded); w.remain = r2(Math.max(0, w.unpaid + pB - Math.min(pW + pD, w.unpaid + pB))); return w;
   }).sort((a, b) => b.rev - a.rev);
 }
 
@@ -2146,15 +2158,16 @@ function pnl(f, t) {
     if (x.kind === 'p') { prod += x.rev; const c = (+x.cost || 0) * x.qty; cogs += c; units += x.qty; const q = pr[x.name] || (pr[x.name] = { q: 0, rev: 0, cost: 0 }); q.q += x.qty; q.rev += x.rev; q.cost += c; }
     else { svc += x.rev; shares += x.share; heads += x.qty; }
   }));
-  const mv = mvIn(f, t), ex = mv.filter(m => m.kind === 'exp'), wd = mv.filter(m => m.kind === 'wd'), bo = mv.filter(m => m.kind === 'bonus');
+  const mv = mvIn(f, t), ex = mv.filter(m => m.kind === 'exp'), wd = mv.filter(m => m.kind === 'wd'), bo = mv.filter(m => m.kind === 'bonus'), dd = mv.filter(m => m.kind === 'ded');
   const pays = S.payouts.filter(p => p.ts >= startOf(f) && p.ts <= endOf(t) && (!repBranch || (p.branch || MAIN) === repBranch));
   const revenue = r2(sum(invs, 'total')), expT = r2(sum(ex, 'amt')), woT = r2(sum(wd, 'amt')), boT = r2(sum(bo, 'amt')), ded = r2(sum(pays, 'deduction'));
+  S.barbers.filter(isDaily).forEach(b => { shares += (+b.daily || 0) * dayKeysOf(b.id, f, t).length; });
   cogs = r2(cogs); shares = r2(shares);
   const xfer = r2(Object.values(byMethod(invs)).filter(x => x.kind !== 'cash').reduce((a, x) => a + x.amt, 0)), cashIn = r2(revenue - xfer), drawer = r2(cashIn - expT - woT);
   const shifts = S.shifts.filter(s => s.closedAt >= startOf(f) && s.closedAt <= endOf(t)).sort((a, b) => a.closedAt - b.closedAt), short = r2(-sum(shifts.filter(s => s.diff < 0), 'diff')), over = r2(sum(shifts.filter(s => s.diff > 0), 'diff'));
   /* العجز يخسّرني والزيادة تكسّبني: تدخل في صافي الربح، ونقدية الدرج الفعلية = المتوقعة + الزيادة − العجز */
   const net = r2(revenue - cogs - shares - boT - expT + ded - short + over), drawerAfter = r2(drawer + over - short);
-  return { invs, ex, wd, bo, pays, pr, drawer, drawerAfter, xfer, cashIn, shifts, short, over, revenue, svc: r2(svc), prod: r2(prod), cogs, shares, boT, expT, woT, ded, net, grossProd: r2(prod - cogs), payable: r2(shares + boT - woT - ded), heads, units, disc: r2(sum(invs, 'disc')), cnt: invs.length };
+  return { invs, ex, wd, bo, dd, pays, pr, drawer, drawerAfter, xfer, cashIn, shifts, short, over, revenue, svc: r2(svc), prod: r2(prod), cogs, shares, boT, expT, woT, ded, net, grossProd: r2(prod - cogs), payable: r2(shares + boT - woT - ded), heads, units, disc: r2(sum(invs, 'disc')), cnt: invs.length };
 }
 function pnlTiles(P) {
   return `<div class="grid3" style="margin-bottom:14px">${tile('إجمالي الإيراد', cur(P.revenue), 'coins')}${tile('تكلفة المنتجات المباعة', cur(P.cogs), 'package', P.cogs ? 'neg' : '')}${tile('نصيب الصنايعية', cur(P.shares), 'users', P.shares ? 'neg' : '')}
@@ -2171,16 +2184,18 @@ const pnlRows = P => [
 function drawMv() {
   const r = readRange(), P = pnl(r.f, r.t), list = mvIn(r.f, r.t).sort((a, b) => b.ts - a.ts);
   $('#rOut').innerHTML = `<div class="grid3" style="margin-bottom:14px">${tile('مصروفات المحل', cur(P.expT), 'receipt', P.expT ? 'neg' : '')}${tile('مسحوبات الصنايعية', cur(P.woT), 'hand-coins')}${tile('الزيادات للصنايعية', cur(P.boT), 'gift')}${tile('عدد الحركات', list.length, 'list')}</div>
-    <div class="tools" style="margin-top:0"><button class="btn pri" data-act="bonusNew">${ic('gift')}إضافة زيادة لصنايعي</button><button class="btn" data-act="mvNew:exp">${ic('receipt')}تسجيل مصروف</button><button class="btn" data-act="mvNew:wd">${ic('hand-coins')}تسجيل مسحوب</button></div>` +
+    <div class="tools" style="margin-top:0"><button class="btn pri" data-act="bonusNew">${ic('gift')}إضافة زيادة لصنايعي</button><button class="btn" data-act="mvNew:ded">${ic('circle-minus')}تسجيل خصم لصنايعي</button><button class="btn" data-act="mvNew:exp">${ic('receipt')}تسجيل مصروف</button><button class="btn" data-act="mvNew:wd">${ic('hand-coins')}تسجيل مسحوب</button></div>` +
     (list.length ? `<div class="card"><div class="tscroll"><table><thead><tr><th>#</th><th>التاريخ والوقت</th><th>النوع</th><th>الصنايعي</th><th>السبب</th><th>الكاشير</th><th>الحالة</th><th class="n">المبلغ</th><th class="n"></th></tr></thead><tbody>${list.map(m => `<tr><td class="num">${m.no}</td><td dir="ltr" style="text-align:start;font-size:12.5px">${fmtDT(m.ts)}</td><td>${mvChip(m.kind)}</td><td>${esc(m.barberName || '—')}</td><td>${esc(m.reason)}</td><td>${esc(m.cashier || '—')}</td><td>${m.kind === 'exp' ? '—' : m.settled ? '<span class="chip g">' + ic('check') + 'تمت المحاسبة</span>' : '<span class="chip y">لم يُحاسب بعد</span>'}</td><td class="n num"><b>${money(m.amt)}</b></td><td class="n"><button class="btn sm red ic" data-act="mvDel:${m.id}" title="حذف">${ic('trash-2')}</button></td></tr>`).join('')}</tbody></table></div></div>` : `<div class="card"><div class="empty">لا توجد حركات في هذه الفترة</div></div>`);
 }
-function mvForm(kind) {
-  const isB = kind === 'bonus', isW = kind === 'wd';
-  openForm(isB ? 'إضافة زيادة لصنايعي' : isW ? 'تسجيل مسحوب صنايعي' : 'تسجيل مصروف', isB ? 'gift' : isW ? 'hand-coins' : 'receipt',
-    `${isB || isW ? `<label class="f">الصنايعي</label><select class="cs" id="mvB">${S.barbers.map(b => `<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select>` : ''}
+let mvPre = '';
+function mvForm(kind, pre) {
+  mvPre = pre || '';
+  const isB = kind === 'bonus', isW = kind === 'wd', isD = kind === 'ded';
+  openForm(isB ? 'إضافة زيادة لصنايعي' : isD ? 'تسجيل خصم على صنايعي' : isW ? 'تسجيل مسحوب صنايعي' : 'تسجيل مصروف', isB ? 'gift' : isD ? 'circle-minus' : isW ? 'hand-coins' : 'receipt',
+    `${isB || isW || isD ? `<label class="f">الصنايعي</label><select class="cs" id="mvB">${S.barbers.map(b => `<option value="${b.id}" ${b.id === mvPre ? 'selected' : ''}>${esc(b.name)}</option>`).join('')}</select>` : ''}
      <div class="row" style="margin-top:12px"><div><label class="f">المبلغ (جنيه)</label><input class="inp num" id="mvA" type="number" min="0" step="any" inputmode="decimal"></div></div>
      <label class="f" style="margin-top:12px">السبب *</label><input class="inp" id="mvR" maxlength="80" placeholder="${isB ? 'مثال: مكافأة تميّز، زيادة عيدية' : 'اكتب السبب'}">
-     ${isB ? '<div class="alertbox info" style="margin-top:12px"><span>تُحتسب الزيادة ضمن مستحقات الصنايعي وتُضاف عند محاسبته، وتُخصم من صافي الربح.</span></div>' : ''}`,
+     ${isB ? '<div class="alertbox info" style="margin-top:12px"><span>تُحتسب الزيادة ضمن مستحقات الصنايعي وتُضاف عند محاسبته، وتُخصم من صافي الربح.</span></div>' : ''}${isD ? '<div class="alertbox info" style="margin-top:12px"><span>الخصم يُسجَّل الآن دون محاسبة، ويتجمّع مع باقي خصومات الصنايعي ويُخصم تلقائيًا من مستحقاته عند المحاسبة.</span></div>' : ''}`,
     () => {
       const a = +$('#mvA').value, reason = $('#mvR').value.trim(); if (!(a > 0)) { toast('اكتب مبلغًا صحيحًا', true); return false; } if (!reason) { toast('اكتب السبب', true); return false; }
       const b = $('#mvB') ? $('#mvB').value : ''; recMove(kind, { amt: a, reason, barber: b, branch: repBranch || curBranch }); slog('mv', `${MV_NAME[kind]} ${money(a)} ج.م — ${reason}${b ? ' — ' + barberName(b) : ''}`);
@@ -2203,7 +2218,7 @@ function moveTable(list, withB) {
 }
 function workerDetail(P, w) {
   const mine = k => [...P.bo, ...P.wd].filter(m => m.barber === w.id && m.kind === k), ds = P.pays.filter(p => p.barber === w.id && p.deduction > 0);
-  const rows = [...mine('bonus').map(m => ['زيادة', esc(m.reason), '+ ' + money(m.amt)]), ...mine('wd').map(m => ['مسحوب', esc(m.reason), '- ' + money(m.amt)]), ...ds.map(p => ['خصم', esc(p.reason || 'بدون سبب'), '- ' + money(p.deduction)])];
+  const rows = [...mine('bonus').map(m => ['زيادة', esc(m.reason), '+ ' + money(m.amt)]), ...mine('wd').map(m => ['مسحوب', esc(m.reason), '- ' + money(m.amt)]), ...(P.dd || []).filter(m => m.barber === w.id && !m.settled).map(m => ['خصم (لم يُحاسب)', esc(m.reason), '- ' + money(m.amt)]), ...ds.map(p => ['خصم', esc(p.reason || 'بدون سبب'), '- ' + money(p.deduction)])];
   return `<h3 class="sec">${esc(w.name)} — من أين جاء المبلغ</h3>${a4Table(['البند', 'السبب / التفصيل', 'المبلغ'], [['أرباح الخدمات', `${w.heads} رأس — دخل ${money(w.rev)} × ${pctTxt(w.pct)}`, '+ ' + money(w.due)], ...rows], ['', 'الصافي المستحق', money(w.net)])}`;
 }
 function buildFull() {
