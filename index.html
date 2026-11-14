@@ -2256,14 +2256,14 @@ function applyGate() {
   const need = !csOpen() && curView !== 'mgr';
   document.body.classList.toggle('gated', need);
   if (!need) { if (g) g.classList.remove('on'); return; }
-  if (!g) { g = document.createElement('div'); g.id = 'shGate'; g.className = 'glass'; document.body.appendChild(g); g.addEventListener('click', e => { if (e.target.closest('[data-gomgr]')) switchView('rep'); }); }
-  g.innerHTML = `<div class="gi">${ic('lock', 'lg')}</div><h3>الوردية غير مبدوءة</h3><p>لا يمكن استخدام الكاشير قبل أن يبدأ المدير الوردية من لوحة المدير.<br>الوقت يُحتسب من لحظة البدء.</p><button class="btn pri" data-gomgr>${ic('key-round')}دخول المدير لبدء الوردية</button>`;
+  if (!g) { g = document.createElement('div'); g.id = 'shGate'; g.className = 'glass'; document.body.appendChild(g); g.addEventListener('click', e => { if (e.target.closest('[data-gostart]')) startCashierShift(); else if (e.target.closest('[data-gomgr]')) switchView('rep'); }); }
+  g.innerHTML = `<div class="gi">${ic('lock', 'lg')}</div><h3>الوردية غير مبدوءة</h3><p>اضغط «بدء الوردية» ليبدأ العمل، ويُحتسب وقت الوردية من لحظة الضغط.</p><button class="btn pri" data-gostart>${ic('play')}بدء الوردية</button><button class="btn sm" data-gomgr>${ic('key-round')}دخول المدير</button>`;
   g.classList.add('on');
 }
 document.addEventListener('keydown', e => { if (!document.body.classList.contains('gated')) return; if (e.target.closest && e.target.closest('#shGate,.modal.on')) return; if (e.altKey && /m/i.test(e.key)) return; if (e.key === 'Tab') return; e.preventDefault(); e.stopImmediatePropagation(); }, true);
 function startCashierShift() {
   S.shiftStart = Date.now(); S.cshift = { open: true, at: S.shiftStart, by: devName(DEV.id) };
-  slog('shift', 'المدير بدأ وردية الكاشير'); save(); flushSave(); applyGate(); try { SYNC.push(); } catch (e) {} if (CL.user) clSchedule(300); toast('بدأت وردية الكاشير — الوقت يُحتسب من الآن'); drawDev();
+  slog('shift', 'بدأت وردية الكاشير'); save(); flushSave(); applyGate(); try { SYNC.push(); } catch (e) {} if (CL.user) clSchedule(300); toast('بدأت الوردية — الوقت يُحتسب من الآن'); drawDev();
 }
 
 /* ----- حذف فاتورة (مشترك) ----- */
@@ -2306,9 +2306,9 @@ function drawDev() {
   const row = id => { const L = ownInv(id), me = id === DEV.id, act = devActive(id), lastNo = L.reduce((m, i) => Math.max(m, i.no), 0);
     return `<tr><td><b>${esc(devName(id))}</b> <small class="num">#${me ? (DEV.no || 1) : (devNo(id) || '؟')}</small>${me ? ` <span class="chip g">${ic('monitor-smartphone')}جلسة مفتوحة من هنا</span>` : act ? ` <span class="chip b">${ic('wifi')}نشط الآن — فيه جلسة مفتوحة</span>` : ''}</td><td>${me ? 'الآن' : lastSeen((DEVS[id] || {}).last)}</td><td class="n num">${L.length}</td><td class="n num">${lastNo || '—'}</td><td class="n num">${money(sum(L, 'total'))}</td><td class="n">${me ? `<button class="btn sm" data-dv="ren:${id}">${ic('pencil')}تسمية</button>` : `<button class="btn sm red" data-dv="del:${id}">${ic('trash-2')}حذف الجهاز</button>`}</td></tr>`; };
   box.innerHTML = `<div class="card pad" style="margin-bottom:14px"><div class="cut" style="margin:0 0 8px">${ic('lock')}<span>وردية الكاشير</span></div>
-    <div class="line" style="padding:6px 0"><span>الحالة</span><b>${open ? `مفتوحة${S.cshift && S.cshift.at ? ' منذ <span dir="ltr" class="num">' + fmtDT(S.cshift.at) + '</span>' : ''}` : 'مغلقة — الكاشير لا يستطيع العمل'}</b></div>
+    <div class="line" style="padding:6px 0"><span>الحالة</span><b>${open ? `مفتوحة${S.cshift && S.cshift.at ? ' منذ <span dir="ltr" class="num">' + fmtDT(S.cshift.at) + '</span>' : ''}` : 'مغلقة — بانتظار أن يضغط الكاشير «بدء الوردية»'}</b></div>
     <div class="tools" style="margin:8px 0 0"><button class="btn ${open ? '' : 'pri'}" data-dv="start" ${open ? 'disabled' : ''}>${ic('play')}بدء وردية الكاشير</button></div>
-    <p class="note" style="margin:8px 0 0">بعد تقفيل أي وردية يُغلق الكاشير تلقائيًا حتى تضغط «بدء وردية الكاشير» من هنا، ويُحتسب وقت الوردية من لحظة الضغط.</p></div>
+    <p class="note" style="margin:8px 0 0">بعد تقفيل أي وردية يُغلق الكاشير تلقائيًا حتى يضغط الكاشير «بدء الوردية» بنفسه (ويمكنك أيضًا بدؤها من هنا)، ويُحتسب الوقت من لحظة الضغط.</p></div>
     <div class="card" style="margin-bottom:14px"><h3>${ic('monitor-smartphone')}الأجهزة <small style="margin-inline-start:auto" class="num">إجمالي الفواتير ${tot}${ids.length > 1 ? ' = ' + ids.map(i => ownInv(i).length).filter(n => n).join(' + ') : ''}</small></h3>
       <div class="tscroll"><table><thead><tr><th>الجهاز</th><th>آخر ظهور</th><th class="n">الفواتير</th><th class="n">آخر رقم</th><th class="n">القيمة</th><th class="n"></th></tr></thead><tbody>${ids.map(row).join('')}${unk.length ? `<tr><td><b>قبل تسجيل الأجهزة</b></td><td>—</td><td class="n num">${unk.length}</td><td class="n num">${unk.reduce((m, i) => Math.max(m, i.no), 0)}</td><td class="n num">${money(sum(unk, 'total'))}</td><td></td></tr>` : ''}</tbody></table></div></div>
     <div class="card"><h3>${ic('triangle-alert')}فواتير بأرقام متكررة (تعارض بين أجهزة) <small style="margin-inline-start:auto" class="num">${cf.length}</small></h3>
@@ -2853,13 +2853,15 @@ function setupSW() {
   navigator.serviceWorker.addEventListener('controllerchange', () => { if (reloading || !updClicked) return; reloading = true; save(); location.reload(); });
 }
 function backupNow() { flushSave(); const fn = `ahmed-saeed-backup-${today()}-${new Date().toTimeString().slice(0, 5).replace(':', '-')}.json`; download(fn, JSON.stringify(S), 'application/json'); try { localStorage.setItem('as_bak_dl', String(Date.now())); } catch (e) {} return fn; }
+async function latestWorker() { if (!swReg) return null; try { await swReg.update(); } catch (e) {} const t0 = Date.now(); while (swReg.installing && Date.now() - t0 < 20000) await new Promise(r => setTimeout(r, 300)); return swReg.waiting || swReg.active; }
 async function applyUpdate() {
   /* 1) هل نزّل نسخة؟ نعم/لا. «لا» => ننزّل له نسخة تلقائيًا. 2) لا تحديث إلا بكلمة مرور المدير الصحيحة */
   const had = await confirmBox({ title: 'قبل التحديث', icon: 'download', ok: 'نعم، نزّلت نسخة', no: 'لا', body: 'هل نزّلت نسخة احتياطية من البيانات؟<br>لو اخترت «لا» سينزّل النظام نسخة تلقائيًا.' });
   if (!had) { try { const fn = backupNow(); toast('تم تنزيل نسخة احتياطية: ' + fn); } catch (e) { toast('تعذّر تنزيل النسخة — لن يتم التحديث', true); return; } }
   if (!(await requireAuth('أدخل كلمة مرور المدير لتأكيد التحديث'))) { toast('لم يتم التحديث — بقي النظام على الإصدار الحالي', true); return; }
   updClicked = true; save(); flushSave(); saveSec(); $('#updBtn').disabled = true; $('#updBtn').textContent = 'جارٍ التحديث...';
-  const w = updWorker || (swReg && (swReg.waiting || swReg.active));
+  /* لو نزلت عدة تحديثات: نأخذ الأحدث فقط ونحدّث مرة واحدة */
+  const w = (await latestWorker()) || updWorker;
   if (!w) { location.reload(); return; }
   try {
     const ch = new MessageChannel(); ch.port1.onmessage = () => { try { localStorage.removeItem('as_upd'); } catch (e) {} if (w.state === 'activated') location.reload(); };
