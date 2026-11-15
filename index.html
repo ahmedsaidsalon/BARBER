@@ -1553,7 +1553,7 @@ function drawRep() {
   } else if (repTab === 'inv') {
     box.innerHTML = rangeBar(`<div><label class="f">بحث (رقم / عميل / كاشير)</label><input class="inp" id="invQ" value="${esc(invQ)}" placeholder="اكتب للبحث"></div><div><label class="f">طريقة الدفع</label><select class="cs" id="fPay">${pmOptions(fltPay)}</select></div>`) + `<div id="rOut"></div>`; enhance(box); drawInv();
   } else if (repTab === 'work') {
-    box.innerHTML = rangeBar() + `<div id="rOut"></div>`; drawWork();
+    box.innerHTML = `<div class="card pad" style="margin-bottom:14px"><div class="row"><div><label class="f">الوردية</label><select class="cs" id="rSh"><option value="">كل ما لم يُحاسَب (متراكم عبر الورديات)</option>${shAll().slice().reverse().map(x => `<option value="${esc(x.id)}" ${x.id === repShift ? 'selected' : ''}>${esc(shTitle(x))} — ${esc(shSpan(x))}</option>`).join('')}</select></div></div><input type="hidden" id="rF" value="${range.f}"><input type="hidden" id="rT" value="${range.t}"></div><div id="rOut"></div>`; enhance(box); drawWork();
   } else if (repTab === 'mv') {
     box.innerHTML = rangeBar() + `<div id="rOut"></div>`; drawMv();
   } else if (repTab === 'stmt') {
@@ -1604,7 +1604,7 @@ function custCsv() { csvOut('العملاء', ['الاسم', 'الهاتف', 'ا
 function csvOut(name, head, rows) { const q = c => '"' + String(c ?? '').replace(/"/g, '""') + '"'; download(`${name}-${today()}.csv`, '﻿' + [head, ...rows].map(r => r.map(q).join(',')).join('\r\n'), 'text/csv;charset=utf-8'); }
 
 function repClick(e) {
-  const t = e.target, tab = t.closest('#repTabs button'); if (tab) { repTab = tab.dataset.r; return drawRep(); }
+  const t = e.target, tab = t.closest('#repTabs button'); if (tab) { repTab = tab.dataset.r; if (repTab !== 'work' && range.f === '2000-01-01') range = { f: today(), t: today() }; return drawRep(); }
   const rq = t.closest('[data-rq]'); if (rq) { const k = rq.dataset.rq, d = new Date(); if (k === 'yest') d.setDate(d.getDate() - 1); repShift = ''; if ($('#rSh')) $('#rSh').value = ''; range = k === 'month' ? { f: monthStart(), t: today() } : { f: dayStr(d), t: dayStr(d) }; $('#rF').value = range.f; $('#rT').value = range.t; return drawOut(); }
   const iv = t.closest('[data-iv]'); if (iv) { const [k, id] = iv.dataset.iv.split(':'), inv = S.invoices.find(i => i.id === id); if (!inv) return; if (k === 'view') showPreview('معاينة الفاتورة #' + inv.no, receiptHTML(inv), 'rc'); if (k === 'print') printDoc(receiptHTML(inv), 'p-rcpt'); if (k === 'del') deleteInvoice(id); return; }
   const a = t.closest('[data-act]'); if (!a) return; const k = a.dataset.act;
@@ -1623,19 +1623,23 @@ function repInput(e) { if (e.target.id === 'invQ') { invQ = e.target.value; draw
 /* ---------- Workers: daily settlement (محاسبة الصنايعي) ---------- */
 const unpaidItems = (bid, f, t) => { const o = []; invIn(f, t).forEach(inv => inv.items.forEach(it => { if (it.barber === bid && !it.paid) o.push(it); })); return o; };
 function drawWork() {
-  const r = readRange(), w = workerAcc(r.f, r.t);
-  const pays = S.payouts.filter(p => p.ts >= startOf(r.f) && p.ts <= endOf(r.t)).sort((a, b) => b.ts - a.ts);
-  $('#rOut').innerHTML = `<div class="grid3" style="margin-bottom:14px">${kp('إجمالي دخل الصنايعية', money(sum(w, 'rev')) + ' ج.م', 'coins')}${kp('مستحقاتهم', money(sum(w, 'due')) + ' ج.م', 'hand-coins')}${kp('لم تُحاسَب بعد', money(sum(w, 'unpaid')) + ' ج.م', 'clock')}${kp('نصيب المحل', money(sum(w, 'rev') - sum(w, 'due')) + ' ج.م', 'wallet')}${kp('مسحوبات الصنايعية', money(sum(w, 'wd')) + ' ج.م', 'hand-coins')}${kp('الزيادات', money(sum(w, 'bonus')) + ' ج.م', 'gift')}${kp('الخصومات', money(sum(w, 'ded')) + ' ج.م', 'circle-minus')}</div>
+  /* الصنايعية بنظام الورديات فقط: الافتراضي كل ما لم يُحاسَب (متراكم)، أو وردية محددة. الأرقام هنا هي نفسها اللي في نموذج المحاسبة */
+  if (!repShift) { range = { f: '2000-01-01', t: today() }; if ($('#rF')) { $('#rF').value = range.f; $('#rT').value = range.t; } }
+  const sc = repShift, rows = S.barbers.map(b => ({ b, pl: settlePlan(b.id, sc), done: sc ? r2(sum(S.payouts.filter(p => p.barber === b.id && (p.shifts || []).includes(sc)), 'net')) : 0 })).filter(x => x.pl.can || x.done > 0 || x.pl.heads > 0);
+  const pays = S.payouts.filter(p => !sc || (p.shifts || []).includes(sc)).sort((a, b) => b.ts - a.ts).slice(0, sc ? 200 : 40);
+  const sh = sc ? shById(sc) : null, T = f => sum(rows.map(x => x.pl), f);
+  $('#rOut').innerHTML = `<div class="alertbox info" style="margin-bottom:12px">${ic('info', 'lg')}<span>${sh ? `${esc(shTitle(sh))} — ${esc(shSpan(sh))}. تظهر هنا مستحقات هذه الوردية التي لم تُحاسَب بعد.` : 'كل ما لم يُحاسَب من كل الورديات (يتجمّع حتى تحاسبهم). ما حوسب لا يظهر مرة أخرى.'}</span></div>
+    <div class="grid3" style="margin-bottom:14px">${kp('دخل الصنايعية', money(T('rev')) + ' ج.م', 'coins')}${kp('المستحق', money(T('due')) + ' ج.م', 'hand-coins')}${kp('زيادات', money(T('bonus')) + ' ج.م', 'gift')}${kp('مسحوبات', money(T('wd')) + ' ج.م', 'hand-coins')}${kp('خصومات', money(T('ded')) + ' ج.م', 'circle-minus')}${kp('يُسلَّم لهم', money(T('net')) + ' ج.م', 'wallet')}</div>
     <div class="tools" style="margin-top:0"><button class="btn pri" data-act="wPrev">${ic('eye')}معاينة كشف الصنايعية</button><button class="btn" data-act="wPrint">${ic('printer')}طباعة A4</button></div>` +
-    (w.length ? `<div class="two" style="margin-top:0">${w.map(x => { const paidPct = x.due > 0 ? (x.due - x.unpaid) / x.due * 100 : 0; return `<div class="wk"><div class="wk-h"><span class="av">${esc(x.name.charAt(0))}</span><div style="flex:1"><b>${esc(x.name)}</b><div style="color:var(--mut);font-size:12px">${x.mode === 'daily' ? 'يومية ' + money(x.daily) + ' ج.م × ' + x.days + ' وردية' : 'النسبة ' + pctTxt(x.pct)}</div></div>${x.unpaid <= 0 && x.pendB <= 0 ? `<span class="chip g">${ic('check')}تمت المحاسبة</span>` : `<span class="chip y">${ic('clock')}مستحق</span>`}</div>
-      <div class="wk-g"><div><small>الرؤوس</small><b class="num">${x.heads}</b></div><div><small>الدخل</small><b class="num">${money(x.rev)}</b></div><div><small>المستحق</small><b class="num">${money(x.due)}</b></div></div>
-      <div class="wk-g"><div><small>زيادات</small><b class="num">${money(x.bonus)}</b></div><div><small>مسحوبات</small><b class="num">${money(x.wd)}</b></div><div><small>خصومات</small><b class="num">${money(x.ded)}</b></div></div>
-      <div class="prog"><i style="width:${paidPct}%"></i></div><div style="display:flex;justify-content:space-between;margin:8px 0 12px;color:var(--mut);font-weight:600"><span>المتبقي للمحاسبة</span><b class="num" style="color:var(--tx);font-family:var(--disp);font-size:18px">${money(x.remain)} ج.م</b></div>
-      <div style="display:flex;gap:8px;margin-bottom:8px"><button class="btn sm" style="flex:1" data-act="mvNew:bonus:${esc(x.id)}">${ic('gift')}زيادة</button><button class="btn sm" style="flex:1" data-act="mvNew:ded:${esc(x.id)}">${ic('circle-minus')}خصم${x.pendD ? ' (' + money(x.pendD) + ')' : ''}</button></div>
-      <button class="btn" style="width:100%;margin-bottom:8px" data-act="wdet:${esc(x.id)}">${ic('list')}تفاصيل ${esc(x.name)} (كل ما عمله)</button>
-      <button class="btn ${x.remain > 0 || x.pendB > 0 || x.unpaid > 0 ? 'ok' : ''}" style="width:100%" ${x.remain > 0 || x.pendB > 0 || x.unpaid > 0 ? '' : 'disabled'} data-act="settle:${esc(x.id)}">${ic('hand-coins')}محاسبة ${esc(x.name)}</button></div>`; }).join('')}</div>` : '<div class="card"><div class="empty">لا توجد مبيعات في هذه الفترة</div></div>') +
-    `<h3 class="cut" style="margin:22px 0 8px">${ic('receipt')}إيصالات المحاسبة في الفترة</h3>` +
-    (pays.length ? `<div class="card"><div class="tscroll"><table><thead><tr><th>#</th><th>التاريخ والوقت</th><th>الصنايعي</th><th>عن الفترة</th><th class="n">رؤوس</th><th class="n">المستحق</th><th class="n">زيادات</th><th class="n">مسحوبات</th><th class="n">الخصم</th><th class="n">المدفوع</th><th class="n">إجراءات</th></tr></thead><tbody>${pays.map(p => `<tr><td class="num">${p.no}</td><td dir="ltr" style="text-align:start;font-size:12.5px">${fmtDT(p.ts)}</td><td><b>${esc(p.barberName)}</b></td><td dir="ltr" style="text-align:start;font-size:12.5px">${p.from === p.to ? p.from : p.from + ' ← ' + p.to}</td><td class="n num">${p.heads}</td><td class="n num">${money(p.due)}</td><td class="n num">${p.bonus ? "+ " + money(p.bonus) : "—"}</td><td class="n num">${p.wd ? "- " + money(p.wd) : "—"}</td><td class="n num">${p.deduction > 0 ? '<span style="color:var(--red)">- ' + money(p.deduction) + '</span>' + (p.reason ? '<br><small style="color:var(--mut)">' + esc(p.reason) + '</small>' : '') : '—'}</td><td class="n num"><b>${money(p.net)}</b></td><td class="n" style="white-space:nowrap"><button class="btn sm ic" data-act="pv:${p.id}" title="معاينة">${ic('eye')}</button> <button class="btn sm ic" data-act="pp:${p.id}" title="طباعة">${ic('printer')}</button> <button class="btn sm ic red" data-act="pu:${p.id}" title="إلغاء المحاسبة">${ic('undo-2')}</button></td></tr>`).join('')}</tbody></table></div></div>` : '<div class="card"><div class="empty">لا توجد إيصالات محاسبة في هذه الفترة</div></div>');
+    (rows.length ? `<div class="two" style="margin-top:0">${rows.map(({ b, pl, done }) => `<div class="wk"><div class="wk-h"><span class="av">${esc(b.name.charAt(0))}</span><div style="flex:1"><b>${esc(b.name)}</b><div style="color:var(--mut);font-size:12px">${isDaily(b) ? 'يومية ' + money(b.daily) + ' ج.م لكل وردية' : 'النسبة ' + pctTxt(barberPct(b.id))}</div></div>${pl.can ? `<span class="chip y">${ic('clock')}مستحق</span>` : `<span class="chip g">${ic('check')}تمت المحاسبة</span>`}</div>
+      <div class="wk-g"><div><small>الرؤوس</small><b class="num">${pl.heads}</b></div><div><small>الدخل</small><b class="num">${money(pl.rev)}</b></div><div><small>المستحق</small><b class="num">${money(pl.due)}</b></div></div>
+      <div class="wk-g"><div><small>زيادات</small><b class="num">${money(pl.bonus)}</b></div><div><small>مسحوبات</small><b class="num">${money(pl.wd)}</b></div><div><small>خصومات</small><b class="num">${money(pl.dPend)}</b></div></div>
+      ${done ? `<div style="color:var(--mut);font-size:12.5px;margin-bottom:6px">سبق محاسبته في هذه الوردية: <b class="num">${money(done)} ج.م</b></div>` : ''}
+      <div style="display:flex;justify-content:space-between;margin:8px 0 12px;color:var(--mut);font-weight:600"><span>يُسلَّم له الآن</span><b class="num" style="color:var(--tx);font-family:var(--disp);font-size:18px">${money(pl.net)} ج.م</b></div>
+      <div style="display:flex;gap:8px;margin-bottom:8px"><button class="btn sm" style="flex:1" data-act="mvNew:bonus:${esc(b.id)}">${ic('gift')}زيادة</button><button class="btn sm" style="flex:1" data-act="mvNew:ded:${esc(b.id)}">${ic('circle-minus')}خصم</button></div>
+      <button class="btn ${pl.can ? 'ok' : ''}" style="width:100%" ${pl.can ? '' : 'disabled'} data-act="settle:${esc(b.id)}">${ic('hand-coins')}محاسبة ${esc(b.name)}</button></div>`).join('')}</div>` : '<div class="card"><div class="empty">لا توجد مستحقات</div></div>') +
+    `<h3 class="cut" style="margin:22px 0 8px">${ic('receipt')}إيصالات المحاسبة</h3>` +
+    (pays.length ? `<div class="card"><div class="tscroll"><table><thead><tr><th>#</th><th>التاريخ والوقت</th><th>الصنايعي</th><th>عن الورديات</th><th class="n">رؤوس</th><th class="n">المستحق</th><th class="n">زيادات</th><th class="n">مسحوبات</th><th class="n">الخصم</th><th class="n">المدفوع</th><th class="n">إجراءات</th></tr></thead><tbody>${pays.map(p => `<tr><td class="num">${p.no}</td><td dir="ltr" style="text-align:start;font-size:12.5px">${fmtDT(p.ts)}</td><td><b>${esc(p.barberName)}</b></td><td dir="ltr" style="text-align:start;font-size:12.5px">${p.shTxt ? esc(p.shTxt) : (p.from === p.to ? p.from : p.from + ' ← ' + p.to)}</td><td class="n num">${p.heads}</td><td class="n num">${money(p.due)}</td><td class="n num">${p.bonus ? "+ " + money(p.bonus) : "—"}</td><td class="n num">${p.wd ? "- " + money(p.wd) : "—"}</td><td class="n num">${p.deduction > 0 ? '<span style="color:var(--red)">- ' + money(p.deduction) + '</span>' + (p.reason ? '<br><small style="color:var(--mut)">' + esc(p.reason) + '</small>' : '') : '—'}</td><td class="n num"><b>${money(p.net)}</b></td><td class="n" style="white-space:nowrap"><button class="btn sm ic" data-act="pv:${p.id}" title="معاينة">${ic('eye')}</button> <button class="btn sm ic" data-act="pp:${p.id}" title="طباعة">${ic('printer')}</button> <button class="btn sm ic red" data-act="pu:${p.id}" title="إلغاء المحاسبة">${ic('undo-2')}</button></td></tr>`).join('')}</tbody></table></div></div>` : '<div class="card"><div class="empty">لا توجد إيصالات محاسبة</div></div>');
 }
 function settlePlan(bid, scope, dedIn) {
   /* scope: '' = كل ما لم يُحاسَب (يتجمّع عبر الورديات) أو رقم وردية محددة. ما سبقت محاسبته لا يُحاسَب مرة أخرى */
@@ -1653,7 +1657,7 @@ function settlePlan(bid, scope, dedIn) {
 }
 const shListTxt = ids => ids.map(id => { const x = shById(id); return x ? (x.open ? 'الحالية' : '#' + x.no) : ''; }).filter(Boolean).join('، ');
 function afterSettle() { try { if ($('#rOut') && repTab === 'work') drawWork(); } catch (e) {} try { renderOut(); renderStats(); renderCash(); } catch (e) {} }
-function settleForm(bid) {
+function settleForm(bid, sc0) {
   const name = (S.barbers.find(b => b.id === bid) || {}).name || (S.invoices.flatMap(i => i.items).find(i => i.barber === bid) || {}).barberName || '—';
   const opts = `<option value="">كل ما لم يُحاسَب (متراكم عبر الورديات)</option>` + shAll().slice().reverse().map(x => `<option value="${esc(x.id)}">${esc(shTitle(x))} — ${esc(shSpan(x))}</option>`).join('');
   openForm('محاسبة الصنايعي: ' + name, 'hand-coins', `<label class="f">المحاسبة عن</label><select class="cs" id="sSh">${opts}</select>
@@ -1674,7 +1678,7 @@ function settleForm(bid) {
     $('#sInfo').innerHTML = `<div class="grid3">${k('الرؤوس', pl.heads)}${k('الدخل', money(pl.rev))}${k(pl.daily ? 'المستحق (نسبة + يومية ' + pl.wu.length + ' وردية)' : 'المستحق (نسبته)', money(pl.due))}${k('زيادات', '+ ' + money(pl.bonus))}${k('مسحوبات', '- ' + money(pl.wd), pl.wd ? 'color:var(--red);-webkit-text-fill-color:var(--red)' : '')}${k('خصومات مسجّلة', '- ' + money(pl.dPend), pl.dPend ? 'color:var(--red);-webkit-text-fill-color:var(--red)' : '')}</div>${pl.shs.length ? `<div style="font-size:12.5px;color:var(--mut);margin-top:6px">الورديات المشمولة: ${esc(shListTxt(pl.shs))}</div>` : ''}${lst(pl.bons, '+')}${lst(pl.wds, '-')}${lst(pl.dds, '-')}${pl.carry.length ? `<div class="alertbox info" style="margin-top:8px"><span>مسحوبات أكبر من المستحق (${money(sum(pl.carry, 'amt'))} ج.م) تُرحَّل للمحاسبة القادمة.</span></div>` : ''}`;
     $('#sNet').textContent = money(pl.net);
   };
-  $('#sSh').addEventListener('change', calc); $('#sDed').addEventListener('input', calc); enhance($('#fBody')); calc();
+  if (sc0) $('#sSh').value = sc0; $('#sSh').addEventListener('change', calc); $('#sDed').addEventListener('input', calc); enhance($('#fBody')); calc();
 }
 async function undoPayout(id) {
   const p = S.payouts.find(x => x.id === id); if (!p) return;
@@ -1686,7 +1690,7 @@ async function undoPayout(id) {
 }
 function workClick(a, k) {
   const [kk, id] = k.split(':');
-  if (kk === 'settle') settleForm(id); else if (kk === 'pv') { const p = S.payouts.find(x => x.id === id); if (p) showPreview('إيصال محاسبة #' + p.no, payoutHTML(p), 'rc'); }
+  if (kk === 'settle') settleForm(id, repShift); else if (kk === 'pv') { const p = S.payouts.find(x => x.id === id); if (p) showPreview('إيصال محاسبة #' + p.no, payoutHTML(p), 'rc'); }
   else if (kk === 'pp') { const p = S.payouts.find(x => x.id === id); if (p) printDoc(payoutHTML(p), 'p-rcpt'); } else if (kk === 'pu') undoPayout(id);
   else if (kk === 'wPrev') showPreview('معاينة كشف حسابات الصنايعية', buildWork().html, 'a4'); else if (kk === 'wPrint') printDoc(buildWork().html, 'p-a4');
 }
