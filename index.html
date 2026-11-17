@@ -954,15 +954,16 @@ function flushSave() { if (!saveT) return; clearTimeout(saveT); saveT = 0;
   try { const cur = localStorage.getItem(KEY); if (cur && lastSaved && cur !== lastSaved) mergeOther(JSON.parse(cur)); } catch (e) {}
   const t = JSON.stringify(S); lastSaved = t; try { localStorage.setItem(KEY, t); } catch (e) {} idbPut(KEY, t); SYNC.push(S); }
 function save() { if (saveT) return; saveT = setTimeout(flushSave, 140); }
-/* الدخل = سعر الخدمة كما هو (الخصم يتحمّله المحل) ونصيب الصنايعي من السعر الكامل. هذه الدالة تصلّح الفواتير القديمة غير المحاسَبة */
+/* الدخل ونصيب الصنايعي يُحسبان على السعر بعد خصم العميل (يوزَّع الخصم على بنود الفاتورة بنسبة أسعارها). هذه الدالة تصلّح الفواتير القديمة غير المحاسَب عليها */
 function fixRevRounding() {
   let n = 0; const sh = new Set();
   S.invoices.forEach(inv => {
-    let ch = false;
-    (inv.items || []).forEach(i => {
-      if (i.paid || !(+i.price >= 0)) return; const full = r2(i.price * i.qty);
-      if (Math.abs(i.rev - full) > 0.001) { i.rev = full; ch = true; }
-      if (i.kind !== 'p') { const sh = shareOf(i.rev, i.pct); if (Math.abs(i.share - sh) > 0.001) { i.share = sh; ch = true; } }
+    const its = inv.items || [], sub = r2(its.reduce((a, i) => a + (+i.price || 0) * (+i.qty || 0), 0)); if (!(sub > 0) || !(+inv.total >= 0)) return;
+    const k = inv.total / sub; let ch = false;
+    its.forEach(i => {
+      if (i.paid || !(+i.price >= 0)) return; const rv = r2(i.price * i.qty * k);
+      if (Math.abs(i.rev - rv) > 0.001) { i.rev = rv; ch = true; }
+      if (i.kind !== 'p') { const s2 = shareOf(i.rev, i.pct); if (Math.abs(i.share - s2) > 0.001) { i.share = s2; ch = true; } }
     });
     if (ch) { n++; if (inv.shift) sh.add(inv.shift); }
   });
@@ -1246,8 +1247,8 @@ function showSugg() {
 /* ----- invoice finalize ----- */
 function doPrintInvoice(pays, withPrint = true) {
   printing = true;
-  const t = curTotals(), c = S.cur;
-  const items = c.items.map(i => { const rev = r2(i.price * i.qty); if (i.kind === 'p') return { kind: 'p', ref: i.ref, name: i.name, price: i.price, qty: i.qty, cost: +i.cost || 0, barber: '', barberName: '', pct: 0, rev, share: 0, paid: null }; const pct = barberPct(i.barber); return { name: i.name, price: i.price, qty: i.qty, barber: i.barber, barberName: barberName(i.barber), pct, rev, share: shareOf(rev, pct), paid: null }; });
+  const t = curTotals(), c = S.cur, k = t.sub > 0 ? t.total / t.sub : 1;
+  const items = c.items.map(i => { const rev = r2(i.price * i.qty * k); if (i.kind === 'p') return { kind: 'p', ref: i.ref, name: i.name, price: i.price, qty: i.qty, cost: +i.cost || 0, barber: '', barberName: '', pct: 0, rev, share: 0, paid: null }; const pct = barberPct(i.barber); return { name: i.name, price: i.price, qty: i.qty, barber: i.barber, barberName: barberName(i.barber), pct, rev, share: shareOf(rev, pct), paid: null }; });
   items.forEach(x => { if (x.kind === 'p') { const g = S.products.find(q => q.id === x.ref); if (g) g.stock = Math.max(0, (+g.stock || 0) - x.qty); } });
   const inv = { id: uid(), dev: DEV.id, no: ++S.counters.inv, ts: Date.now(), cust: c.name.trim(), phone: digits(c.phone), cashier: S.settings.cashier || '', items, sub: t.sub, disc: t.disc, total: t.total, pays, shift: null, printed: withPrint };
   inv.branch = curBranch; inv.code = invCode(inv); S.invoices.push(inv); recordCustomer(inv); S.served.push({ t: inv.ts, name: inv.cust || ('فاتورة #' + inv.no), how: withPrint ? 'invoice' : 'saved', no: inv.no });
@@ -1674,21 +1675,22 @@ function settleForm(bid, sc0) {
   openForm('محاسبة الصنايعي: ' + name, 'hand-coins', `<label class="f">المحاسبة عن</label><select class="cs" id="sSh">${opts}</select>
     <div id="sInfo" style="margin:14px 0"></div>
     <div class="row"><div><label class="f">خصم إضافي الآن (جنيه) — غير الخصومات المسجّلة</label><input class="inp num" id="sDed" type="number" min="0" step="1" inputmode="numeric" placeholder="0"></div><div><label class="f">سبب الخصم (اختياري)</label><input class="inp" id="sRes" maxlength="60" placeholder="مثال: تأخير"></div></div>
-    <div class="row" style="margin-top:12px"><div><label class="f">حتى يوم (اختياري — لتسوية ما قبل تاريخ معيّن)</label><input type="date" class="inp" id="sUp"></div><div><label class="f">الصرف</label><select class="cs" id="sCash"><option value="yes">يُخصم من نقدية الدرج</option><option value="no">صُرف من قبل — بدون خصم من الدرج</option></select></div></div><div style="font-size:12px;color:var(--mut);margin-top:4px">المحاسبة لا تقلّل «إجمالي الإيراد» أبدًا، وأرباح الصنايعي محسوبة في صافي الربح من وقت البيع. الاختيار يؤثر على نقدية الدرج فقط.</div>
-    <div class="total" style="margin:14px 0 0"><small>المبلغ الذي سيُسلَّم للصنايعي (يُخصم من نقدية الدرج)</small><div class="big num" style="font-size:42px"><span id="sNet">0</span><em>ج.م</em></div></div>`, () => {
-    const scope = $('#sSh').value, pl = settlePlan(bid, scope, $('#sDed').value, $('#sUp').value); if (!pl.can) { toast('لا توجد بنود غير محاسبة', true); return false; }
+    <div class="row" style="margin-top:12px"><div><label class="f">حتى يوم (اختياري — لتسوية ما قبل تاريخ معيّن)</label><input type="date" class="inp" id="sUp"></div><div><label class="f">الصرف</label><select class="cs" id="sCash"><option value="yes">يُخصم من نقدية الدرج</option><option value="no">صُرف من قبل — بدون خصم من الدرج</option><option value="zero">تصفير الحساب — لا يُصرف له شيء (لم يعمل)</option></select></div></div><div style="font-size:12px;color:var(--mut);margin-top:4px">المحاسبة لا تقلّل «إجمالي الإيراد» أبدًا، وأرباح الصنايعي محسوبة في صافي الربح من وقت البيع. الاختيار يؤثر على نقدية الدرج فقط.</div>
+    <div class="total" style="margin:14px 0 0"><small>المبلغ الذي سيُسلَّم للصنايعي (يُخصم من نقدية الدرج)</small><div class="big num" style="font-size:42px"><span id="sNet">0</span><em>ج.م</em></div></div>`, async () => {
+    const scope = $('#sSh').value, pl = settlePlan(bid, scope, $('#sDed').value, $('#sUp').value), zero = $('#sCash').value === 'zero'; if (!pl.can) { toast('لا توجد بنود غير محاسبة', true); return false; }
+    if (zero && !(await requireAuth('تصفير حساب الصنايعي — أدخل كلمة مرور المدير'))) return false;
     const lines = [...pl.bons.map(m => ({ k: 'bonus', amt: m.amt, reason: m.reason })), ...pl.wds.map(m => ({ k: 'wd', amt: m.amt, reason: m.reason })), ...pl.dds.map(m => ({ k: 'ded', amt: m.amt, reason: m.reason }))];
     const ds = pl.items.map(i => { const inv = S.invoices.find(v => v.items.includes(i)); return inv ? dayStr(inv.ts) : today(); }).sort(), from = ds[0] || today(), to = ds[ds.length - 1] || today();
-    const p = { id: uid(), no: ++S.counters.payout, ts: Date.now(), barber: bid, barberName: name, from, to, heads: pl.heads, rev: pl.rev, due: pl.due, bonus: pl.bonus, wd: pl.wd, lines, deduction: pl.ded, reason: $('#sRes').value.trim(), net: pl.net, mode: pl.daily ? 'daily' : 'pct', days: pl.wu.length, wage: pl.wage, shifts: pl.shs, shTxt: shListTxt(pl.shs), branch: repBranch || curBranch, by: S.settings.cashier || '', noCash: $('#sCash').value === 'no', upTo: $('#sUp').value || '' };
+    const p = { id: uid(), no: ++S.counters.payout, ts: Date.now(), barber: bid, barberName: name, from, to, heads: pl.heads, rev: pl.rev, due: pl.due, bonus: pl.bonus, wd: pl.wd, lines, deduction: zero ? r2(pl.ded + pl.net) : pl.ded, reason: $('#sRes').value.trim() || (zero ? 'تصفير الحساب' : ''), net: zero ? 0 : pl.net, zeroed: zero, waived: zero ? pl.net : 0, mode: pl.daily ? 'daily' : 'pct', days: pl.wu.length, wage: pl.wage, shifts: pl.shs, shTxt: shListTxt(pl.shs), branch: repBranch || curBranch, by: S.settings.cashier || '', noCash: $('#sCash').value !== 'yes', upTo: $('#sUp').value || '' };
     pl.items.forEach(i => i.paid = p.id); [...pl.bons, ...pl.wds, ...pl.dds].forEach(m => m.settled = p.id); S.payouts.push(p);
     if (p.net > 0 && !p.noCash) S.moves.push({ id: uid(), no: ++S.counters.mv, ts: p.ts, kind: 'pay', amt: p.net, reason: `محاسبة ${name} — إيصال #${p.no}`, barber: bid, barberName: name, branch: curBranch, cashier: S.settings.cashier || '', shift: null, settled: p.id, pay: p.id });
-    save(); afterSettle(); beep(660); setTimeout(() => beep(990), 140); toast(`تمت محاسبة ${name} — خرج من الدرج ${money(p.net)} ج.م`); setTimeout(() => showPreview('إيصال محاسبة #' + p.no, payoutHTML(p), 'rc'), 250);
+    save(); afterSettle(); if (!zero) { beep(660); setTimeout(() => beep(990), 140); } toast(zero ? `تم تصفير حساب ${name}` : `تمت محاسبة ${name} — خرج من الدرج ${money(p.net)} ج.م`); setTimeout(() => showPreview('إيصال محاسبة #' + p.no, payoutHTML(p), 'rc'), 250);
   }, 'تأكيد المحاسبة');
   const calc = () => {
     const pl = settlePlan(bid, $('#sSh').value, $('#sDed').value, $('#sUp').value), k = (l, v, cl) => `<div class="kpi" style="padding:12px 16px"><small>${l}</small><b class="num" style="font-size:21px;${cl || ''}">${v}</b></div>`;
     const lst = (arr, sg) => arr.length ? `<div style="font-size:12.5px;color:var(--mut);margin-top:4px">${arr.map(m => `${sg} ${money(m.amt)} — ${esc(m.reason)}`).join('<br>')}</div>` : '';
     $('#sInfo').innerHTML = `<div class="grid3">${k('الرؤوس', pl.heads)}${k('الدخل', money(pl.rev))}${k(pl.daily ? 'المستحق (نسبة + يومية ' + pl.wu.length + ' وردية)' : 'المستحق (نسبته)', money(pl.due))}${k('زيادات', '+ ' + money(pl.bonus))}${k('مسحوبات', '- ' + money(pl.wd), pl.wd ? 'color:var(--red);-webkit-text-fill-color:var(--red)' : '')}${k('خصومات مسجّلة', '- ' + money(pl.dPend), pl.dPend ? 'color:var(--red);-webkit-text-fill-color:var(--red)' : '')}</div>${pl.shs.length ? `<div style="font-size:12.5px;color:var(--mut);margin-top:6px">الورديات المشمولة: ${esc(shListTxt(pl.shs))}</div>` : ''}${lst(pl.bons, '+')}${lst(pl.wds, '-')}${lst(pl.dds, '-')}${pl.carry.length ? `<div class="alertbox info" style="margin-top:8px"><span>مسحوبات أكبر من المستحق (${money(sum(pl.carry, 'amt'))} ج.م) تُرحَّل للمحاسبة القادمة.</span></div>` : ''}`;
-    $('#sNet').textContent = money(pl.net); $('#sInfo').insertAdjacentHTML('beforeend', $('#sCash').value === 'no' ? '<div class="alertbox info" style="margin-top:8px"><span>سيُسجَّل كمحاسَب فقط، ولن يخرج شيء من الدرج.</span></div>' : '');
+    $('#sNet').textContent = money(pl.net); $('#sNet').textContent = $('#sCash').value === 'zero' ? '0' : money(pl.net); $('#sInfo').insertAdjacentHTML('beforeend', $('#sCash').value === 'zero' ? '<div class="alertbox info" style="margin-top:8px"><span>سيُصفَّر الحساب (' + money(pl.net) + ' ج.م) دون صرف أي مبلغ، ويُسجَّل في إيصال بخصم «تصفير». يحتاج كلمة مرور المدير.</span></div>' : $('#sCash').value === 'no' ? '<div class="alertbox info" style="margin-top:8px"><span>سيُسجَّل كمحاسَب فقط، ولن يخرج شيء من الدرج.</span></div>' : '');
   };
   if (sc0) $('#sSh').value = sc0; $('#sSh').addEventListener('change', calc); $('#sDed').addEventListener('input', calc); $('#sUp').addEventListener('change', calc); $('#sCash').addEventListener('change', calc); enhance($('#fBody')); calc();
 }
@@ -1758,7 +1760,7 @@ function buildShiftStmt() {
       if (fltBarber && id !== fltBarber) return; wrows.push([esc(shTitle(d.sh)), `<b>${esc(barberName(id))}</b>`, x.heads, money(x.rev), money(x.due), dly ? money(wage) : '—', `<b>${money(tot)}</b>`, money(r2(tot - un)), `<b>${money(un)}</b>`]); });
   });
   const html = a4HTML({ title: 'كشف حساب الورديات', info: [['الفترة', `<span class="ltr num">${periodTxt(r)}</span>`], ['عدد الورديات', D.length], ['إجمالي الإيراد (قبل الخصم)', cur(r2(sum(D, 'tot') + sum(D, 'disc')))], ['دخل الصنايعية', cur(sum(D, 'svcRev'))]],
-    sum: [['دخل الصنايعية (أسعار كاملة)', cur(sum(D, 'svcRev'))], ['إجمالي الإيراد (قبل الخصم)', cur(r2(sum(D, 'tot') + sum(D, 'disc')))], ['خصومات العملاء', cur(sum(D, 'disc')), 1], ['المحصَّل من العملاء', cur(sum(D, 'tot'))], ['محاسبات الصنايعية من الدرج', cur(sum(D, 'py'))]],
+    sum: [['دخل الصنايعية (بعد خصم العميل)', cur(sum(D, 'svcRev'))], ['إجمالي الإيراد (قبل الخصم)', cur(r2(sum(D, 'tot') + sum(D, 'disc')))], ['خصومات العملاء', cur(sum(D, 'disc')), 1], ['المحصَّل من العملاء', cur(sum(D, 'tot'))], ['محاسبات الصنايعية من الدرج', cur(sum(D, 'py'))]],
     body: (D.length ? `<h3 class="sec">الورديات: التاريخ والإيراد</h3>${a4Table(head1, rows1, foot1)}<h3 class="sec">نقدية الدرج لكل وردية</h3>${a4Table(head2, rows2)}<h3 class="sec">حسابات الصنايعية في كل وردية</h3>${wrows.length ? a4Table(['الوردية', 'الصنايعي', 'رؤوس', 'الدخل', 'أرباحه', 'يومية', 'المستحق', 'تمت محاسبته', 'المتبقي'], wrows) : '<div class="note">لا توجد حسابات.</div>'}<div class="note" style="margin-top:6px">الإيراد بأسعار الخدمات والمنتجات قبل خصم العملاء، والخصم يتحمّله المحل فيظهر بعده: المحصَّل = الإيراد − خصومات العملاء. ما حوسب في وردية لا يُحاسَب مرة أخرى، وما لم يُحاسَب يتجمّع ويكمل في الورديات التالية.</div>` : '<div class="note">لا توجد ورديات في الفترة المحددة.</div>') });
   const tiles = stT([tile('عدد الورديات', D.length, 'clock'), tile('دخل الصنايعية', cur(sum(D, 'svcRev')), 'users'), tile('خصومات العملاء', cur(sum(D, 'disc')), 'tag', 'neg'), tile('إجمالي الإيراد (قبل الخصم)', cur(r2(sum(D, 'tot') + sum(D, 'disc'))), 'coins'), tile('محاسبات من الدرج', cur(sum(D, 'py')), 'hand-coins')]);
   return { html, tiles, title: 'كشف الورديات ' + periodTxt(r), csv: () => csvOut('كشف-الورديات', [...head1, ...head2.slice(1)], D.map(d => [shTitle(d.sh), fmtDT(d.sh.openedAt || d.sh.closedAt), d.sh.open ? 'مفتوحة' : fmtDT(d.sh.closedAt), d.sh.cashier || '', d.invs.length, d.svcRev, r2(d.tot + d.disc), d.disc, d.tot, d.xfer, d.cash, d.ex, d.wd, d.py, d.exp, d.act == null ? '' : d.act, d.diff == null ? '' : d.diff])), table: (D.length ? a4Table(head1, rows1, foot1) + a4Table(head2, rows2) + (wrows.length ? a4Table(['الوردية', 'الصنايعي', 'رؤوس', 'الدخل', 'أرباحه', 'يومية', 'المستحق', 'تمت محاسبته', 'المتبقي'], wrows) : '') : '') };
@@ -2267,9 +2269,9 @@ function pnlTiles(P) {
     ${tile('خصومات على الصنايعية', cur(P.ded), 'circle-minus')}${tile('ربح المنتجات', cur(P.grossProd), 'shopping-bag', P.grossProd > 0 ? 'pos' : '')}${tile('نقدية الدرج بعد العجز/الزيادة', cur(P.drawerAfter), 'banknote', 'pos')}${tile('إجمالي التحويلات', cur(P.xfer), 'smartphone')}${tile('العجز', cur(P.short), 'triangle-alert', P.short ? 'neg' : '')}${tile('الزيادة', cur(P.over), 'circle-plus', P.over ? 'pos' : '')}${tile('صافي الربح', cur(P.net), 'trending-up', P.net > 0 ? 'pos big' : P.net < 0 ? 'neg big' : 'big')}</div>`;
 }
 const pnlRows = P => [
-  ['إجمالي دخل الصنايعية (الخدمات بأسعارها الكاملة)', P.svcFull, 0], ['يُضاف: مبيعات المنتجات', P.prod, 0],
+  ['إجمالي الخدمات بأسعارها قبل خصم العميل', P.svcFull, 0], ['يُضاف: مبيعات المنتجات', P.prod, 0],
   ['إجمالي الإيراد (بأسعار الخدمات والمنتجات قبل خصم العملاء)', P.gross, 1], ['يُخصم: خصومات العملاء (على المحل)', -P.disc, 0], ['المحصَّل فعلًا من العملاء', P.revenue, 0],
-  ['يُخصم: تكلفة شراء المنتجات المباعة', -P.cogs, 0], ['يُخصم: نصيب الصنايعية من الخدمات (نسبهم)', -P.shares, 0], ['يُخصم: زيادات الصنايعية', -P.boT, 0], ['يُخصم: مصروفات المحل', -P.expT, 0],
+  ['يُخصم: تكلفة شراء المنتجات المباعة', -P.cogs, 0], ['يُخصم: نصيب الصنايعية من الخدمات (بعد خصم العميل)', -P.shares, 0], ['يُخصم: زيادات الصنايعية', -P.boT, 0], ['يُخصم: مصروفات المحل', -P.expT, 0],
   ['يُضاف: ما خُصم من الصنايعية في المحاسبات', P.ded, 0], ['يُخصم: عجز الدرج في الورديات', -P.short, 0], ['يُضاف: زيادة الدرج في الورديات', P.over, 0], ['صافي الربح', P.net, 1]];
 
 /* ----- تبويب المدير: مسحوبات ومصروفات وزيادات ----- */
@@ -2389,7 +2391,6 @@ const devName = id => !id ? 'قبل تسجيل الأجهزة' : id === DEV.id ?
 const devActive = id => id !== DEV.id && DEVS[id] && !DEVS[id].deleted && Date.now() - (DEVS[id].last || 0) < 150000;
 const ownInv = id => S.invoices.filter(i => (i.dev || '') === (id || ''));
 function devIds() { const s = new Set([DEV.id]); Object.keys(DEVS).forEach(k => { if (!DEVS[k].deleted) s.add(k); }); S.invoices.forEach(i => { if (i.dev && !(DEVS[i.dev] && DEVS[i.dev].deleted)) s.add(i.dev); }); return [...s]; }
-function devConflicts() { const m = {}; S.invoices.forEach(i => { (m[i.no] || (m[i.no] = [])).push(i); }); return Object.keys(m).map(Number).filter(n => m[n].length > 1).sort((a, b) => a - b).map(n => ({ no: n, list: m[n].sort((a, b) => a.ts - b.ts) })); }
 const lastSeen = t => { if (!t) return 'غير معروف'; const s = Math.floor((Date.now() - t) / 1000); return s < 90 ? 'الآن' : s < 3600 ? 'منذ ' + Math.floor(s / 60) + ' دقيقة' : s < 86400 ? 'منذ ' + Math.floor(s / 3600) + ' ساعة' : fmtDT(t); };
 
 /* ----- وردية الكاشير (لا يعمل الكاشير إلا بعد بدئها من المدير) ----- */
@@ -2415,59 +2416,40 @@ function dropInvoice(inv) {
   inv.items.forEach(x => { if (x.kind === 'p') { const g = S.products.find(q => q.id === x.ref); if (g) g.stock = (+g.stock || 0) + x.qty; } });
   if (inv.shift) { const sh = S.shifts.find(s => s.id === inv.shift); if (sh) recalcShift(sh); }
 }
-async function devDelInv(id) {
-  const inv = S.invoices.find(i => i.id === id); if (!inv) return;
-  if (!(await requireAuth(`أدخل كلمة المرور لحذف الفاتورة #${inv.no} (${devName(inv.dev)})`))) { toast('لم تُحذف الفاتورة', true); return; }
-  if (!(await confirmBox({ title: 'حذف الفاتورة', danger: true, ok: 'حذف', icon: 'trash-2', body: `ستُحذف الفاتورة <b>#${inv.no}</b> بقيمة <b>${money(inv.total)} ج.م</b> من <b>${esc(devName(inv.dev))}</b> ومن كل الأجهزة بعد المزامنة.` }))) return;
-  dropInvoice(inv); slog('invdel', `حذف الفاتورة #${inv.no} (${devName(inv.dev)}) بقيمة ${money(inv.total)} ج.م`); save(); renderCash(); toast('حُذفت الفاتورة'); drawDev();
-}
-/* حذف جهاز: تُحذف فواتيره من كل الأجهزة (بأمر في السحابة يطبّقه كل جهاز عند اتصاله) */
-async function devDelete(id) {
-  if (id === DEV.id) { toast('لا يمكن حذف الجهاز الذي تعمل منه الآن', true); return; }
-  const list = ownInv(id), nm = devName(id);
-  if (!(await requireAuth(`أدخل كلمة المرور لحذف ${nm} وفواتيره`))) { toast('لم يُحذف الجهاز', true); return; }
-  if (!(await confirmBox({ title: 'حذف جهاز وفواتيره', danger: true, ok: 'نعم، احذف', icon: 'trash-2', typed: 'حذف', body: `سيُحذف <b>${esc(nm)}</b> و<b>${list.length}</b> فاتورة (${money(sum(list, 'total'))} ج.م) من كل الأجهزة، وتعود بياناته لآخر نسخة حقيقية بعد الحذف.<br>سيُنزَّل أولًا ملف نسخة احتياطية.` }))) return;
-  try { backupNow(); } catch (e) { toast('تعذّر تنزيل النسخة — لم يُحذف شيء', true); return; }
-  const ts = Date.now(); list.forEach(dropInvoice); delete DEVS[id];
-  slog('devdel', `حذف ${nm} وفواتيره (${list.length})`); S.purged = S.purged || {}; S.purged[id] = ts; save(); flushSave(); renderCash();
-  if (CL.user && CL.fb) { try { CL.allowMass = true; const { F, db } = CL.fb; await F.setDoc(F.doc(db, 'salons', 'main', 'devices', id), { deleted: true, purge: ts, last: ts }, { merge: true }); await clPush(); } catch (e) {} CL.allowMass = false; }
-  toast('حُذف الجهاز وفواتيره'); drawDev();
-}
-/* يطبّقه كل جهاز عند رؤية أمر الحذف في السجل */
-function devApplyPurge(id, d) {
-  if (!d || !d.purge) return; S.purged = S.purged || {}; if ((S.purged[id] || 0) >= d.purge) return;
-  const del = S.invoices.filter(i => (i.dev || '') === id && i.ts <= d.purge); S.purged[id] = d.purge;
-  if (del.length) { del.forEach(dropInvoice); del.forEach(i => { try { delete CL.hashes['invoices/' + i.id]; } catch (e) {} }); try { lsSet('as_cl_h', JSON.stringify(CL.hashes)); } catch (e) {} }
-  flushSaveLocal(); try { renderCash(true); renderStats(); if ($('#v-rep').classList.contains('on')) drawDev(); } catch (e) {}
-}
 function devRename(id) { if (id !== DEV.id) return; const v = prompt('اسم هذا الجهاز (مثال: كاشير المحل / لاب المدير)', DEV.name || ''); if (v === null) return; DEV.name = v.trim().slice(0, 30); devSave(); clBeat(); drawDev(); }
 
 /* ----- شاشة المدير: الأجهزة والوردية ----- */
+function devType() {
+  const ua = navigator.userAgent || '', mob = /Android|iPhone|iPod/i.test(ua), tab = /iPad|Tablet/i.test(ua) || (/Android/i.test(ua) && !/Mobile/i.test(ua)) || (navigator.maxTouchPoints > 1 && /Macintosh/i.test(ua));
+  const os = /Android/i.test(ua) ? 'Android' : /iPhone|iPad|iPod/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/i.test(ua)) ? 'iOS' : /Windows/i.test(ua) ? 'Windows' : /Mac/i.test(ua) ? 'macOS' : /Linux/i.test(ua) ? 'Linux' : '';
+  const br = /Edg\//.test(ua) ? 'Edge' : /OPR\//.test(ua) ? 'Opera' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : '';
+  let app = false; try { app = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true; } catch (e) {}
+  return { kind: tab ? 'تابلت' : mob ? 'هاتف' : 'كمبيوتر', os, br, app };
+}
+const devTypeTxt = d => d && d.kind ? `${d.kind}${d.os ? ' — ' + d.os : ''}${d.br ? ' / ' + d.br : ''}${d.app ? ' (تطبيق مثبّت)' : ' (متصفح)'}` : 'غير معروف';
 function drawDev() {
   const box = $('#repBody'); if (!box || repTab !== 'dev' || !$('#v-rep').classList.contains('on')) return;
-  const ids = devIds(), unk = ownInv(''), tot = S.invoices.length, cf = devConflicts(), open = csOpen();
-  const row = id => { const L = ownInv(id), me = id === DEV.id, act = devActive(id), lastNo = L.reduce((m, i) => Math.max(m, i.no), 0);
-    return `<tr><td><b>${esc(devName(id))}</b> <small class="num">#${me ? (DEV.no || 1) : (devNo(id) || '؟')}</small>${me ? ` <span class="chip g">${ic('monitor-smartphone')}جلسة مفتوحة من هنا</span>` : act ? ` <span class="chip b">${ic('wifi')}نشط الآن — فيه جلسة مفتوحة</span>` : ''}</td><td>${me ? 'الآن' : lastSeen((DEVS[id] || {}).last)}</td><td class="n num">${L.length}</td><td class="n num">${lastNo || '—'}</td><td class="n num">${money(sum(L, 'total'))}</td><td class="n">${me ? `<button class="btn sm" data-dv="ren:${id}">${ic('pencil')}تسمية</button>` : `<button class="btn sm red" data-dv="del:${id}">${ic('trash-2')}حذف الجهاز</button>`}</td></tr>`; };
+  const ids = [DEV.id, ...Object.keys(DEVS).filter(k => k !== DEV.id && !DEVS[k].deleted)], open = csOpen();
+  const row = id => { const me = id === DEV.id, act = me || devActive(id), d = me ? devType() : (DEVS[id] || {}).type;
+    return `<tr><td><b>${esc(devName(id))}</b> <small class="num">#${me ? (DEV.no || 1) : (devNo(id) || '؟')}</small>${me ? ` <span class="chip g">${ic('monitor-smartphone')}هذا الجهاز</span>` : ''}</td><td>${esc(devTypeTxt(d))}</td><td>${act ? `<span class="chip b">${ic('wifi')}مفتوح الآن</span>` : '<span class="chip">غير متصل</span>'}</td><td>${me ? 'الآن' : lastSeen((DEVS[id] || {}).last)}</td><td class="n">${me ? `<button class="btn sm" data-dv="ren:${id}">${ic('pencil')}اسم الجهاز</button>` : ''}</td></tr>`; };
   box.innerHTML = `<div class="card pad" style="margin-bottom:14px"><div class="cut" style="margin:0 0 8px">${ic('lock')}<span>وردية الكاشير</span></div>
     <div class="line" style="padding:6px 0"><span>الحالة</span><b>${open ? `مفتوحة${S.cshift && S.cshift.at ? ' منذ <span dir="ltr" class="num">' + fmtDT(S.cshift.at) + '</span>' : ''}` : 'مغلقة — بانتظار أن يضغط الكاشير «بدء الوردية»'}</b></div>
-    <div class="tools" style="margin:8px 0 0"><button class="btn ${open ? '' : 'pri'}" data-dv="start" ${open ? 'disabled' : ''}>${ic('play')}بدء وردية الكاشير</button></div>
-    <p class="note" style="margin:8px 0 0">بعد تقفيل أي وردية يُغلق الكاشير تلقائيًا حتى يضغط الكاشير «بدء الوردية» بنفسه (ويمكنك أيضًا بدؤها من هنا)، ويُحتسب الوقت من لحظة الضغط.</p></div>
-    <div class="card" style="margin-bottom:14px"><h3>${ic('monitor-smartphone')}الأجهزة <small style="margin-inline-start:auto" class="num">إجمالي الفواتير ${tot}${ids.length > 1 ? ' = ' + ids.map(i => ownInv(i).length).filter(n => n).join(' + ') : ''}</small></h3>
-      <div class="tscroll"><table><thead><tr><th>الجهاز</th><th>آخر ظهور</th><th class="n">الفواتير</th><th class="n">آخر رقم</th><th class="n">القيمة</th><th class="n"></th></tr></thead><tbody>${ids.map(row).join('')}${unk.length ? `<tr><td><b>قبل تسجيل الأجهزة</b></td><td>—</td><td class="n num">${unk.length}</td><td class="n num">${unk.reduce((m, i) => Math.max(m, i.no), 0)}</td><td class="n num">${money(sum(unk, 'total'))}</td><td></td></tr>` : ''}</tbody></table></div></div>
-    <div class="card"><h3>${ic('triangle-alert')}فواتير بأرقام متكررة (تعارض بين أجهزة) <small style="margin-inline-start:auto" class="num">${cf.length}</small></h3>
-      ${cf.length ? `<div class="tscroll"><table><thead><tr><th>الرقم</th><th>الجهاز</th><th>الوقت</th><th>العميل</th><th class="n">القيمة</th><th class="n"></th></tr></thead><tbody>${cf.map(c => c.list.map((i, n) => `<tr><td>${n ? '' : `<b class="num">#${c.no}</b>`}</td><td>${esc(devName(i.dev))}</td><td><span dir="ltr" class="num">${fmtDT(i.ts)}</span></td><td>${esc(i.cust || '—')}</td><td class="n num">${money(i.total)}</td><td class="n"><button class="btn sm red" data-dv="inv:${i.id}">${ic('trash-2')}حذف</button></td></tr>`).join('')).join('')}</tbody></table></div>` : `<div class="pad note">لا توجد فواتير بأرقام متكررة.</div>`}</div>`;
+    <div class="tools" style="margin:8px 0 0"><button class="btn ${open ? '' : 'pri'}" data-dv="start" ${open ? 'disabled' : ''}>${ic('play')}بدء وردية الكاشير</button></div></div>
+    <div class="card"><h3>${ic('monitor-smartphone')}الأجهزة المتصلة بالحساب <small style="margin-inline-start:auto" class="num">${ids.filter(i => i === DEV.id || devActive(i)).length} مفتوح الآن</small></h3>
+      <div class="tscroll"><table><thead><tr><th>الجهاز</th><th>النوع</th><th>الحالة</th><th>آخر ظهور</th><th class="n"></th></tr></thead><tbody>${ids.map(row).join('')}</tbody></table></div>
+      <p class="note" style="margin:8px 12px 12px">القائمة للعرض فقط: لا يوجد دمج للبيانات، وكل جهاز يحتفظ بفواتيره وورديّاته وحساباته وحده. تحتاج تسجيل الدخول بالحساب على الجهاز ليظهر هنا.</p></div>`;
 }
-document.addEventListener('click', e => { const b = e.target.closest('[data-dv]'); if (!b) return; const [k, id] = b.dataset.dv.split(':'); if (k === 'start') startCashierShift(); else if (k === 'ren') devRename(id); else if (k === 'del') devDelete(id); else if (k === 'inv') devDelInv(id); });
+document.addEventListener('click', e => { const b = e.target.closest('[data-dv]'); if (!b) return; const [k, id] = b.dataset.dv.split(':'); if (k === 'start') startCashierShift(); else if (k === 'ren') devRename(id); });
 setInterval(() => { if (curView === 'mgr' && repTab === 'dev') drawDev(); applyGate(); }, 30000);
 
 /* ----- نبض الجهاز في السحابة ----- */
 async function clBeat() {
   if (!CL.user || !CL.fb) return;
-  try { const { F, db } = CL.fb; const L = ownInv(DEV.id); await F.setDoc(F.doc(db, 'salons', 'main', 'devices', DEV.id), { no: DEV.no || 1, name: DEV.name || '', last: Date.now(), inv: L.length, lastNo: L.reduce((m, i) => Math.max(m, i.no), 0), deleted: false }, { merge: true }); } catch (e) {}
+  try { const { F, db } = CL.fb; const L = ownInv(DEV.id); await F.setDoc(F.doc(db, 'salons', 'main', 'devices', DEV.id), { no: DEV.no || 1, name: DEV.name || '', last: Date.now(), inv: L.length, lastNo: L.reduce((m, i) => Math.max(m, i.no), 0), type: devType(), deleted: false }, { merge: true }); } catch (e) {}
 }
 let devSeen = {}, devFirst = true;
 function devOnSnap(snap) {
-  snap.docChanges().forEach(c => { const id = c.doc.id, d = c.doc.data(); if (c.type === 'removed') { delete DEVS[id]; return; } DEVS[id] = d; devApplyPurge(id, d); });
+  snap.docChanges().forEach(c => { const id = c.doc.id, d = c.doc.data(); if (c.type === 'removed') { delete DEVS[id]; return; } DEVS[id] = d; });
   if (!DEV.no) { const mx = Math.max(0, ...Object.keys(DEVS).filter(k => k !== DEV.id).map(k => DEVS[k].no || 0)); DEV.no = mx + 1; devSave(); clBeat(); }
   else if (DEVS[DEV.id] && DEVS[DEV.id].deleted === undefined && !DEVS[DEV.id].no) clBeat();
   Object.keys(DEVS).forEach(id => { if (id === DEV.id) return; const a = !!devActive(id); if (a && !devSeen[id] && !devFirst) { try { toast(devName(id) + ' متصل الآن — فيه جلسة مفتوحة منه'); } catch (e) {} } devSeen[id] = a; });
@@ -2502,7 +2484,7 @@ const cid = k => encodeURIComponent(k).replace(/\./g, '%2E');
 
 function clUI() {
   const b = $('#syncBtn'); if (!b) return;
-  b.dataset.st = CL.st; b.title = { off: 'غير متصل بالحساب — اضغط لتسجيل الدخول', wait: 'المزامنة متوقفة — اضغط لبدء المزامنة بعد تأكيد الباسورد', sync: 'جارٍ المزامنة…', ok: 'متزامن مع السحابة' + (CL.last ? ' — آخر مزامنة ' + fmtT(CL.last) : ''), err: 'تعذّرت المزامنة — ' + CL.err }[CL.st] || '';
+  b.dataset.st = CL.st; b.title = { off: 'غير متصل بالحساب — اضغط لتسجيل الدخول', wait: 'جارٍ الاتصال…', sync: 'جارٍ الاتصال…', ok: 'متصل — الأجهزة المفتوحة تظهر في تبويب الأجهزة', err: 'تعذّر الاتصال — ' + CL.err }[CL.st] || '';
   const c = $('#clCard'); if (c) c.outerHTML = cloudCard();
 }
 function clSet(st, err) { CL.st = st; CL.err = err || ''; if (st === 'ok') { CL.last = Date.now(); lsSet('as_cl_last', CL.last); } clUI(); }
@@ -2560,50 +2542,16 @@ async function clAccept(user, fromGate) {
     try { const { Au, auth } = await clLoad(); await Au.signOut(auth); } catch (e) {}
     lsSet('as_auth', ''); clSet('off'); const m = 'هذا الحساب غير مصرّح به. استخدم ' + OWNER_EMAIL; if (fromGate) { gateShow(m); } else toast(m, true); return false;
   }
-  CL.user = user; lsSet('as_auth', '1'); if (fromGate) { $('#gMsg').textContent = 'جارٍ تحميل البيانات…'; if (await clPrefetch()) { flushSaveLocal(); saveSec(); location.reload(); return true; } } gateHide(); clSet('wait'); clAsk(); return true;
+  CL.user = user; lsSet('as_auth', '1'); gateHide(); clSet('wait'); clAsk(); return true;
 }
 
 /* ----- بدء المزامنة ----- */
 let clUnsubs = [];
 async function clStart() {
-  if (!CL.user || !CL.go || clUnsubs.length) return;
-  const { F, db } = await clLoad(), base = F.collection(db, 'salons', 'main', 'meta');
-  clSet('sync');
-  /* قبل أول دمج على هذا الجهاز: نسخة كاملة من بياناته المحلية تُحفظ جانبًا */
-  if (!lsGet('as_pre_sync')) { try { idbPut('as_pre_sync_' + Date.now(), JSON.stringify(S)); lsSet('as_pre_sync', '1'); } catch (e) {} }
-  const refreshSoon = (() => { let t = 0; return () => { clearTimeout(t); t = setTimeout(() => { CL.applying = true; try { clRefreshUI(); } finally { CL.applying = false; } }, 120); }; })();
+  /* لا توجد مزامنة بيانات (فواتير/ورديات/إعدادات): كل جهاز مستقل ببياناته. السحابة تُستخدم فقط لإظهار الأجهزة المتصلة وتزامن كلمة المرور وسجل الأمان */
+  if (!CL.user || clUnsubs.length || CL.go) return; CL.go = true;
+  const { F, db } = await clLoad(); clSet('ok');
   const onErr = e => { clSet('err', (e && e.code) || 'خطأ'); };
-  /* meta: آخر كتابة تغلب */
-  clUnsubs.push(F.onSnapshot(F.doc(db, 'salons', 'main', 'meta', 'state'), snap => {
-    if (snap.metadata.hasPendingWrites || !snap.exists()) { if (!snap.exists()) clPushMeta(true); return; }
-    clApplyMeta(snap.data());
-    clSet('ok');
-  }, onErr));
-  /* المجموعات */
-  Object.keys(COLS).concat(['customers']).forEach(name => {
-    clUnsubs.push(F.onSnapshot(F.collection(db, 'salons', 'main', name), snap => {
-      let ch = false; CL.applying = true;
-      try {
-        const chg = snap.docChanges(), rem = chg.filter(c => c.type === 'removed').length, bulkRem = rem > 3 && rem > (name === 'customers' ? Object.keys(S.customers).length : COLS[name]().length) * 0.3 && !CL.allowMass;
-        chg.forEach(c => {
-          if (bulkRem && c.type === 'removed') return;
-          if (snap.metadata.hasPendingWrites && c.doc.metadata.hasPendingWrites) return;
-          const d = c.doc.data(), key = name + '/' + c.doc.id;
-          if (name === 'customers') { const k = d.k; if (c.type === 'removed') { if (S.customers[k]) { delete S.customers[k]; ch = true; } delete CL.hashes[key]; } else { const j = JSON.stringify(d.v); if (JSON.stringify(S.customers[k]) !== j) { S.customers[k] = d.v; ch = true; } CL.hashes[key] = hsh(j); } return; }
-          const arr = COLS[name]();
-          if (c.type === 'removed') { const i = arr.findIndex(x => x.id === c.doc.id); if (i >= 0) { arr.splice(i, 1); ch = true; } delete CL.hashes[key]; }
-          else { let o; try { o = JSON.parse(d.json); } catch (e) { return; } const i = arr.findIndex(x => x.id === o.id); const j = JSON.stringify(o); CL.hashes[key] = hsh(j); if (i < 0) { arr.push(o); ch = true; } else if (JSON.stringify(arr[i]) !== j) { arr[i] = o; ch = true; } }
-        });
-        if (ch) { if (name === 'invoices') S.invoices.sort((a, b) => a.ts - b.ts); lsSet('as_cl_h', JSON.stringify(CL.hashes)); flushSaveLocal(); refreshSoon(); }
-      } finally { CL.applying = false; }
-      clSet('ok'); clSchedule(800);
-    }, onErr));
-  });
-  /* شواهد الحذف: أي جهاز يتصل لاحقًا يطبّق الحذف المقصود (حتى لو كان مفصولًا وقت الحذف) */
-  clUnsubs.push(F.onSnapshot(F.collection(db, 'salons', 'main', 'tomb'), snap => {
-    let ch = false; CL.applying = true;
-    try { snap.docChanges().forEach(c => { if (c.type === 'removed') return; const d = c.doc.data(); if (!d || !COLS[d.n]) return; const arr = COLS[d.n](), i = arr.findIndex(x => x.id === d.id); delete CL.hashes[d.n + '/' + d.id]; if (i >= 0) { arr.splice(i, 1); ch = true; } }); if (ch) { lsSet('as_cl_h', JSON.stringify(CL.hashes)); flushSaveLocal(); refreshSoon(); } } finally { CL.applying = false; }
-  }, () => {}));
   clLogFlush(); clDevStart(F, db, onErr);
   /* كلمة مرور المدير: تتزامن بين الأجهزة كبصمة مشفّرة (PBKDF2 + salt) وليس كنص صريح */
   clUnsubs.push(F.onSnapshot(F.doc(db, 'salons', 'main', 'meta', 'sec'), snap => {
@@ -2615,21 +2563,10 @@ async function clStart() {
     let ch = false; snap.docChanges().forEach(c => { if (c.type === 'removed') return; const d = c.doc.data(); if (!SEC.log.some(l => l.id === c.doc.id)) { SEC.log.push({ id: c.doc.id, t: d.t, type: d.type, note: d.note }); ch = true; } });
     if (ch) { SEC.log.sort((a, b) => a.t - b.t); if (SEC.log.length > 400) SEC.log.splice(0, SEC.log.length - 400); saveSec(); }
   }, () => {}));
-  clSchedule(1500);
 }
 /* المزامنة يدوية: لا تبدأ إلا بعد موافقة + كلمة مرور المدير، وفي كل مرة يُفتح فيها التطبيق */
 let askBusy = false, askLast = 0;
-async function clAsk(force) {
-  if (!CL.user || CL.go || askBusy || !navigator.onLine) return; if (!force && Date.now() - askLast < 600000) return;
-  askBusy = true; askLast = Date.now();
-  try {
-    const ok = await confirmBox({ title: 'لقد اتصلت بالواي فاي', icon: 'cloud', ok: 'نعم، زامِن', no: 'لا', body: 'هل تريد مزامنة البيانات الآن؟<br><b>عند الموافقة تُنزَّل نسخة احتياطية من بيانات هذا الجهاز تلقائيًا، ثم تُدخل كلمة مرور المدير لتبدأ المزامنة.</b><div class="note" style="margin-top:10px">إن اخترت «لا» لا تحدث مزامنة ولا تنزيل، وتبقى بياناتك على هذا الجهاز كما هي.</div>' });
-    if (!ok) { clSet('wait'); return; }
-    try { toast('تم تنزيل نسخة احتياطية: ' + backupNow()); } catch (e) { toast('تعذّر تنزيل النسخة الاحتياطية — لم تبدأ المزامنة', true); clSet('wait'); return; }
-    if (!(await requireAuth('أدخل كلمة مرور المدير لبدء المزامنة'))) { toast('لم تبدأ المزامنة — كلمة المرور غير صحيحة', true); clSet('wait'); return; }
-    CL.go = true; clStart(); toast('بدأت المزامنة');
-  } finally { askBusy = false; }
-}
+async function clAsk() { if (!CL.user || CL.go || !navigator.onLine) return; clStart(); }
 document.addEventListener('click', e => { if (e.target.closest('[data-bkdl]')) { try { toast('تم تنزيل نسخة احتياطية: ' + backupNow()); } catch (er) { toast('تعذّر تنزيل النسخة', true); } } });
 function clStop() { clUnsubs.forEach(u => { try { u(); } catch (e) {} }); clUnsubs = []; }
 function flushSaveLocal() { try { const t = JSON.stringify(S); lastSaved = t; localStorage.setItem(KEY, t); idbPut(KEY, t); } catch (e) {} }
@@ -2691,6 +2628,7 @@ async function clPushMeta(force) {
   await F.setDoc(F.doc(db, 'salons', 'main', 'meta', 'state'), { json: j, ts: CL.mts, by: OWNER_EMAIL }); CL.mhash = h; lsSet('as_cl_mh', h);
 }
 async function clPush() {
+  return; /* مزامنة البيانات ملغاة */
   if (!CL.user || !CL.fb || !CL.go || CL.applying) return;
   try {
     const { F, db } = CL.fb; clSet('sync'); const ops = [], seen = {};
@@ -2713,25 +2651,25 @@ async function clPush() {
     lsSet('as_cl_h', JSON.stringify(CL.hashes)); clSet('ok');
   } catch (e) { clSet('err', (e && e.code) || 'خطأ'); clearTimeout(CL.retry); CL.retry = setTimeout(() => { if (CL.go) clSchedule(100); }, 15000); }
 }
-SYNC.push = () => { if (CL.user && CL.go && !CL.applying) clSchedule(2000); };
+SYNC.push = () => {};
 
 /* ----- بطاقة السحابة في الإعدادات ----- */
 function cloudCard() {
-  const on = !!CL.user, stTxt = { off: 'غير متصل بالحساب', wait: 'بانتظار موافقتك على المزامنة', sync: 'جارٍ المزامنة…', ok: 'متزامن', err: 'خطأ في المزامنة' }[CL.st];
-  return `<div class="card pad" id="clCard" style="margin:0"><div class="cut">${ic('cloud')}<span>المزامنة السحابية (Firebase)</span></div>
-    <div class="grid3" style="margin:12px 0"><div class="kpi"><small>الحساب</small><b style="font-size:15px;-webkit-text-fill-color:var(--tx);color:var(--tx);background:none;direction:ltr;text-align:start">${esc(on ? CL.user.email : OWNER_EMAIL)}</b></div><div class="kpi"><small>الحالة</small><b style="font-size:20px">${stTxt}${CL.err ? ' — ' + esc(CL.err) : ''}</b></div><div class="kpi"><small>آخر مزامنة</small><b style="font-size:20px" class="num">${CL.last ? fmtDT(CL.last) : '—'}</b></div></div>
-    <div class="tools" style="margin:0">${on ? `<button class="btn pri" data-cl="now">${ic('refresh-cw')}مزامنة الآن</button><button class="btn red" data-cl="out">${ic('log-out')}تسجيل الخروج من الحساب</button>` : `<button class="btn pri" data-cl="in">${ic('cloud')}تسجيل الدخول بحساب Google</button>`}</div>
-    <p style="color:var(--mut);margin:10px 0 0;line-height:1.8;font-size:13px">المزامنة يدوية وآمنة: تُحفظ البيانات محليًا فورًا (تعمل بدون إنترنت)، وعند توفر الاتصال يسألك النظام وتبدأ المزامنة فقط بعد تأكيدك وكلمة مرور المدير، وتصل لأي جهاز آخر مسجَّل بنفس الحساب.</p></div>`;
+  const on = !!CL.user, stTxt = { off: 'غير متصل بالحساب', wait: 'جارٍ الاتصال…', sync: 'جارٍ الاتصال…', ok: 'متصل', err: 'خطأ في الاتصال' }[CL.st];
+  return `<div class="card pad" id="clCard" style="margin:0"><div class="cut">${ic('cloud')}<span>الحساب والأجهزة المتصلة</span></div>
+    <div class="grid3" style="margin:12px 0"><div class="kpi"><small>الحساب</small><b style="font-size:15px;-webkit-text-fill-color:var(--tx);color:var(--tx);background:none;direction:ltr;text-align:start">${esc(on ? CL.user.email : OWNER_EMAIL)}</b></div><div class="kpi"><small>الحالة</small><b style="font-size:20px">${stTxt}${CL.err ? ' — ' + esc(CL.err) : ''}</b></div><div class="kpi"><small>آخر اتصال</small><b style="font-size:20px" class="num">${CL.last ? fmtDT(CL.last) : '—'}</b></div></div>
+    <div class="tools" style="margin:0">${on ? `<button class="btn red" data-cl="out">${ic('log-out')}تسجيل الخروج من الحساب</button>` : `<button class="btn pri" data-cl="in">${ic('cloud')}تسجيل الدخول بحساب Google</button>`}</div>
+    <p style="color:var(--mut);margin:10px 0 0;line-height:1.8;font-size:13px">لا يوجد دمج للبيانات بين الأجهزة: كل جهاز يحتفظ بفواتيره وورديّاته وحساباته مستقلة. الحساب يُستخدم فقط لإظهار الأجهزة المفتوحة ونوع كل جهاز (من تبويب «الأجهزة والوردية») ولتوحيد كلمة مرور المدير.</p></div>`;
 }
 function bindCloud() {
   document.addEventListener('click', async e => {
     const c = e.target.closest('[data-cl]'); if (c) {
       const k = c.dataset.cl;
-      if (k === 'in') clSignIn(false); else if (k === 'now') { if (!CL.go) clAsk(true); else { clSchedule(10); toast('بدأت المزامنة'); } }
+      if (k === 'in') clSignIn(false);
       else if (k === 'out') { if (!(await requireAuth('أدخل كلمة المرور لتسجيل الخروج من حساب المزامنة'))) return; if (!(await confirmBox({ title: 'تسجيل الخروج', danger: true, ok: 'خروج', icon: 'log-out', body: 'سيتوقف رفع البيانات للسحابة وتُطلب بوابة الدخول من جديد. بيانات الجهاز لن تُمسح.' }))) return; clStop(); CL.user = null; try { const { Au, auth } = await clLoad(); await Au.signOut(auth); } catch (er) {} lsSet('as_auth', ''); clSet('off'); gateShow(); }
       return;
     }
-    if (e.target.closest('#syncBtn')) { if (!CL.user) { if (lsGet('as_auth') === '1') clInit(); else gateShow(); clSignIn(false); } else if (!CL.go) clAsk(true); else { clSchedule(10); toast('بدأت المزامنة'); } }
+    if (e.target.closest('#syncBtn')) { if (!CL.user) { if (lsGet('as_auth') === '1') clInit(); else gateShow(); clSignIn(false); } else toast('لا توجد مزامنة بيانات — الأجهزة المتصلة تظهر في تبويب «الأجهزة والوردية»'); }
   });
   window.addEventListener('online', () => { if (lsGet('as_auth') === '1') { if (CL.user && CL.go) setTimeout(() => clSchedule(100), 800); else if (CL.user) clAsk(); else clInit(); } });
   window.addEventListener('offline', () => { if (CL.st !== 'off') clSet('off'); });
