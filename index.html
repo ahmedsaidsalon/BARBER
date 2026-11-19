@@ -1580,7 +1580,8 @@ function drawRep() {
 const diffChip = d => d === 0 ? `<span class="chip g">${ic('check')}مطابق</span>` : d < 0 ? `<span class="chip r">عجز ${money(-d)}</span>` : `<span class="chip y">زيادة ${money(d)}</span>`;
 function shiftsTable(list) {
   if (!list.length) return '<div class="empty">لا توجد ورديات مقفلة بعد</div>';
-  return `<table><thead><tr><th>#</th><th>اليوم</th><th>النوع</th><th>الكاشير</th><th>الفترة</th><th class="n">فواتير</th><th class="n">الرؤوس</th><th class="n">الخصومات</th><th class="n">الإجمالي</th><th class="n">النقدي المتوقع</th><th class="n">الفعلي</th><th>الفارق</th><th>التحصيل</th><th>مستحقات العمال</th><th></th></tr></thead><tbody>${list.map(s => `<tr><td>${s.no}</td><td><b>${dayLbl(s.openedAt || s.closedAt)}</b></td><td>${s.type === 'day' ? 'تصفية يوم' : 'وردية'}${s.adjusted ? ' <span class="chip y">معدّلة</span>' : ''}</td><td>${esc(s.cashier)}</td><td dir="ltr" style="font-size:12px;text-align:start">بدأت: ${fmtDT(s.openedAt || s.closedAt)}<br>انتهت: ${fmtDT(s.closedAt)}</td><td class="n num">${s.count}</td><td class="n num">${sum(s.workers, 'heads')}</td><td class="n num">${money(s.discount)}</td><td class="n num">${money(s.total)}</td><td class="n num">${money(s.expected)}</td><td class="n num"><b>${money(s.actual)}</b></td><td>${diffChip(s.diff)}</td><td style="font-size:12px">${Object.values(s.methods || {}).map(m => esc(m.name) + ': ' + money(m.amt)).join('<br>') || '—'}</td><td style="font-size:12px">${s.workers.map(w => esc(w.name) + ': ' + money(w.due)).join('<br>') || '—'}</td><td><button class="btn sm" data-act="shsum:${s.id}">${ic('file-text')}ملخص</button></td></tr>`).join('')}</tbody></table>`;
+  const rows = list.map(s => { const P = shNetP(s), heads = P.heads; return `<tr><td>${s.no}</td><td><b>${dayLbl(s.openedAt || s.closedAt)}</b></td><td>${s.type === 'day' ? 'تصفية يوم' : 'وردية'}${s.adjusted ? ' <span class="chip y">معدّلة</span>' : ''}</td><td>${esc(s.cashier)}</td><td style="font-size:12px">من ${fmtT(s.openedAt || s.closedAt)}<br>إلى ${fmtT(s.closedAt)}${dayStr(s.closedAt) !== dayStr(s.openedAt || s.closedAt) ? ' <small>(' + dayNm(s.closedAt) + ')</small>' : ''}</td><td class="n num">${s.count}</td><td class="n num">${heads}</td><td class="n num">${money(s.total)}</td><td class="n num">${money(s.discount)}</td><td class="n num">${money(s.expected)}</td><td class="n num"><b>${money(s.actual)}</b></td><td>${diffChip(s.diff)}</td><td style="font-size:12px">${Object.values(s.methods || {}).map(m => esc(m.name) + ': ' + money(m.amt)).join('<br>') || '-'}</td><td style="font-size:12px">${s.workers.map(w => esc(w.name) + ': ' + money(w.due)).join('<br>') || '-'}</td><td class="n num"><b style="${P.net < 0 ? 'color:var(--red)' : ''}">${money(P.net)}</b></td></tr>`; }).join('');
+  return `<table><thead><tr><th>#</th><th>اليوم والتاريخ</th><th>النوع</th><th>الكاشير</th><th>البداية والنهاية</th><th class="n">الفواتير</th><th class="n">الرؤوس</th><th class="n">الإجمالي</th><th class="n">الخصومات</th><th class="n">النقدي المتوقع</th><th class="n">الفعلي</th><th>الفارق</th><th>التحصيل</th><th>مستحقات العمال</th><th class="n">صافي الربح</th></tr></thead><tbody>${rows}</tbody></table><div class="note" style="margin-top:8px">صافي الربح يحسب مستحق الصنايعية كاملًا سواء حُوسبوا أو لا.</div>`;
 }
 
 /* ----- invoices ----- */
@@ -1644,7 +1645,7 @@ function drawWork() {
   const sh = sc ? shById(sc) : null, T = f => sum(rows.map(x => x.pl), f);
   $('#rOut').innerHTML = `<div class="alertbox info" style="margin-bottom:12px">${ic('info', 'lg')}<span>${sh ? `${esc(shTitle(sh))} — ${esc(shSpan(sh))}. تظهر هنا مستحقات هذه الوردية التي لم تُحاسَب بعد.` : 'كل ما لم يُحاسَب من كل الورديات (يتجمّع حتى تحاسبهم). ما حوسب لا يظهر مرة أخرى.'}</span></div>
     <div class="grid3" style="margin-bottom:14px">${kp('دخل الصنايعية', money(T('rev')) + ' ج.م', 'coins')}${kp('المستحق', money(T('due')) + ' ج.م', 'hand-coins')}${kp('زيادات', money(T('bonus')) + ' ج.م', 'gift')}${kp('مسحوبات', money(T('wd')) + ' ج.م', 'hand-coins')}${kp('خصومات', money(T('ded')) + ' ج.م', 'circle-minus')}${kp('يُسلَّم لهم', money(T('net')) + ' ج.م', 'wallet')}</div>
-    <div class="tools" style="margin-top:0"><button class="btn pri" data-act="wPrev">${ic('eye')}معاينة كشف الصنايعية</button><button class="btn" data-act="wPrint">${ic('printer')}طباعة A4</button></div>` +
+    <div class="tools" style="margin-top:0"><button class="btn pri" data-act="wPrev">${ic('eye')}معاينة كشف الصنايعية</button></div>` +
     (rows.length ? `<div class="two" style="margin-top:0">${rows.map(({ b, pl, done }) => `<div class="wk"><div class="wk-h"><span class="av">${esc(b.name.charAt(0))}</span><div style="flex:1"><b>${esc(b.name)}</b><div style="color:var(--mut);font-size:12px">${isDaily(b) ? 'يومية ' + money(b.daily) + ' ج.م لكل وردية' : 'النسبة ' + pctTxt(barberPct(b.id))}</div></div>${pl.can ? `<span class="chip y">${ic('clock')}مستحق</span>` : `<span class="chip g">${ic('check')}تمت المحاسبة</span>`}</div>
       <div class="wk-g"><div><small>عدد الخدمات</small><b class="num">${pl.heads}</b></div><div><small>دخل المكان</small><b class="num">${money(pl.rev)}</b></div><div><small>المستحق</small><b class="num">${money(pl.due)}</b></div></div>
       <div class="wk-g"><div><small>زيادات</small><b class="num">${money(pl.bonus)}</b></div><div><small>مسحوبات</small><b class="num">${money(pl.wd)}</b></div><div><small>خصومات</small><b class="num">${money(pl.dPend)}</b></div></div>
@@ -1708,7 +1709,7 @@ async function undoPayout(id) {
 }
 function workClick(a, k) {
   const [kk, id] = k.split(':');
-  if (kk === 'settle') settleForm(id, repFrom); else if (kk === 'pv') { const p = S.payouts.find(x => x.id === id); if (p) showPreview('إيصال محاسبة #' + p.no, payoutHTML(p), 'rc'); }
+  if (kk === 'wPrev') return wkPreview(); if (kk === 'settle') settleForm(id, repFrom); else if (kk === 'pv') { const p = S.payouts.find(x => x.id === id); if (p) showPreview('إيصال محاسبة #' + p.no, payoutHTML(p), 'rc'); }
   else if (kk === 'pp') { const p = S.payouts.find(x => x.id === id); if (p) printDoc(payoutHTML(p), 'p-rcpt'); } else if (kk === 'pu') undoPayout(id);
   else if (kk === 'wPrev') showPreview('معاينة كشف حسابات الصنايعية', buildWork().html, 'a4'); else if (kk === 'wPrint') printDoc(buildWork().html, 'p-a4');
 }
@@ -2285,6 +2286,7 @@ function drawMv() {
   $('#rOut').innerHTML = `<div class="grid3" style="margin-bottom:14px">${tile('مصروفات المحل', cur(P.expT), 'receipt', P.expT ? 'neg' : '')}${tile('مسحوبات الصنايعية', cur(P.woT), 'hand-coins')}${tile('الزيادات للصنايعية', cur(P.boT), 'gift')}${tile('عدد الحركات', list.length, 'list')}</div>
     <div class="tools" style="margin-top:0"><button class="btn pri" data-act="bonusNew">${ic('gift')}إضافة زيادة لصنايعي</button><button class="btn" data-act="mvNew:ded">${ic('circle-minus')}تسجيل خصم لصنايعي</button><button class="btn" data-act="mvNew:exp">${ic('receipt')}تسجيل مصروف</button><button class="btn" data-act="mvNew:wd">${ic('hand-coins')}تسجيل مسحوب</button></div>` +
     (list.length ? `<div class="card"><div class="tscroll"><table><thead><tr><th>#</th><th>التاريخ والوقت</th><th>النوع</th><th>الصنايعي</th><th>السبب</th><th>الكاشير</th><th>الحالة</th><th class="n">المبلغ</th><th class="n"></th></tr></thead><tbody>${list.map(m => `<tr><td class="num">${m.no}</td><td dir="ltr" style="text-align:start;font-size:12.5px">${fmtDT(m.ts)}</td><td>${mvChip(m.kind)}</td><td>${esc(m.barberName || '—')}</td><td>${esc(m.reason)}</td><td>${esc(m.cashier || '—')}</td><td>${m.kind === 'exp' ? '—' : m.settled ? '<span class="chip g">' + ic('check') + 'تمت المحاسبة</span>' : '<span class="chip y">لم يُحاسب بعد</span>'}</td><td class="n num"><b>${money(m.amt)}</b></td><td class="n"><button class="btn sm red ic" data-act="mvDel:${m.id}" title="حذف">${ic('trash-2')}</button></td></tr>`).join('')}</tbody></table></div></div>` : `<div class="card"><div class="empty">لا توجد حركات في هذه الفترة</div></div>`);
+  $('#rOut').insertAdjacentHTML('beforeend', movesLogs(list.filter(m => CASHK.includes(m.kind)), 0));
 }
 let mvPre = '';
 function mvForm(kind, pre) {
@@ -2418,9 +2420,29 @@ function moveLogHTML(list, kind, title, icon, maxDays) {
   const fin = byB ? `<div class="card"><div class="tscroll"><table><thead><tr><th>إجمالي كل صنايعي (النهائي)</th><th class="n">المبلغ</th></tr></thead><tbody>${Object.keys(per).sort().map(n => `<tr><td>${esc(n)}</td><td class="n num"><b>${money(per[n])}</b></td></tr>`).join('')}<tr><td><b>الإجمالي الكلي</b></td><td class="n num"><b>${money(grand)}</b></td></tr></tbody></table></div></div>` : `<div class="card"><div class="tscroll"><table><tbody><tr><td><b>الإجمالي الكلي</b></td><td class="n num"><b>${money(grand)}</b></td></tr></tbody></table></div></div>`;
   return `<h3 class="cut" style="margin:18px 0 8px">${ic(icon)}${title}</h3>${keys.map(dayBlock).join('')}${more ? `<div class="note" style="margin:0 0 10px">عُرضت أحدث ${maxDays} أيام (يوجد ${more} يوم أقدم)، والإجماليات أدناه تشمل الكل.</div>` : ''}${fin}`;
 }
+/* جدول الأيام × الصنايعية (مسحوبات / مرتبات): الخلية الفارغة شرطة */
+function mvMatrix(list, title, icon, maxDays) {
+  const h = `<h3 class="cut" style="margin:18px 0 8px">${ic(icon)}${title}</h3>`;
+  if (!list.length) return h + '<div class="card"><div class="empty">لا توجد حركات</div></div>';
+  let keys = [...new Set(list.map(m => dayStr(m.ts)))].sort(); const more = maxDays && keys.length > maxDays ? keys.length - maxDays : 0; if (more) keys = keys.slice(-maxDays);
+  const ks = new Set(keys), L = list.filter(m => ks.has(dayStr(m.ts))), names = [...new Set(L.map(m => m.barberName || '—'))].sort(), cell = {};
+  L.forEach(m => { const k = dayStr(m.ts) + '|' + (m.barberName || '—'); cell[k] = r2((cell[k] || 0) + m.amt); });
+  const rows = keys.map(d => { const t = L.find(m => dayStr(m.ts) === d).ts, tot = r2(names.reduce((a, n) => a + (cell[d + '|' + n] || 0), 0)); return `<tr><td><b>${dayLbl(t)}</b></td>${names.map(n => `<td class="n num">${cell[d + '|' + n] ? money(cell[d + '|' + n]) : '-'}</td>`).join('')}<td class="n num"><b>${money(tot)}</b></td></tr>`; }).join('');
+  const colT = names.map(n => r2(keys.reduce((a, d) => a + (cell[d + '|' + n] || 0), 0))), grand = r2(colT.reduce((a, b) => a + b, 0));
+  return h + `<div class="card"><div class="tscroll"><table><thead><tr><th>اليوم والتاريخ</th>${names.map(n => `<th class="n">${esc(n)}</th>`).join('')}<th class="n">إجمالي اليوم</th></tr></thead><tbody>${rows}<tr style="background:var(--glassbg)"><td><b>الإجمالي</b></td>${colT.map(v => `<td class="n num"><b>${money(v)}</b></td>`).join('')}<td class="n num"><b>${money(grand)}</b></td></tr></tbody></table></div></div>${more ? `<div class="note" style="margin:0 0 10px">معروض آخر ${maxDays} أيام فقط، والإجماليات للأيام المعروضة.</div>` : ''}`;
+}
+/* المصروفات: يوم وتاريخ، البند، القيمة، إجمالي اليوم، والإجمالي الكلي */
+function expMatrix(list, title, icon, maxDays) {
+  const h = `<h3 class="cut" style="margin:18px 0 8px">${ic(icon)}${title}</h3>`;
+  if (!list.length) return h + '<div class="card"><div class="empty">لا توجد حركات</div></div>';
+  let keys = [...new Set(list.map(m => dayStr(m.ts)))].sort(); const more = maxDays && keys.length > maxDays ? keys.length - maxDays : 0; if (more) keys = keys.slice(-maxDays);
+  let grand = 0; const rows = keys.map(d => { const L = list.filter(m => dayStr(m.ts) === d).sort((a, b) => a.ts - b.ts), tot = r2(sum(L, 'amt')); grand = r2(grand + tot);
+    return L.map((m, i) => `<tr>${i === 0 ? `<td rowspan="${L.length}"><b>${dayLbl(m.ts)}</b></td>` : ''}<td>${esc(m.reason)} <small style="color:var(--mut)">${fmtT(m.ts)}</small></td><td class="n num">${money(m.amt)}</td>${i === 0 ? `<td class="n num" rowspan="${L.length}"><b>${money(tot)}</b></td>` : ''}</tr>`).join(''); }).join('');
+  return h + `<div class="card"><div class="tscroll"><table><thead><tr><th>اليوم والتاريخ</th><th>بند المصروف</th><th class="n">القيمة</th><th class="n">إجمالي اليوم</th></tr></thead><tbody>${rows}<tr style="background:var(--glassbg)"><td colspan="3"><b>الإجمالي الكلي</b></td><td class="n num"><b>${money(grand)}</b></td></tr></tbody></table></div></div>${more ? `<div class="note" style="margin:0 0 10px">معروض آخر ${maxDays} أيام فقط، والإجماليات للأيام المعروضة.</div>` : ''}`;
+}
 const movesLogs = (all, maxDays) => {
   const f = k => all.filter(m => m.kind === k).sort((a, b) => a.ts - b.ts);
-  return moveLogHTML(f('wd'), 'wd', 'سجل المسحوبات (بالأيام)', 'hand-coins', maxDays) + moveLogHTML(f('exp'), 'exp', 'سجل المصروفات (بالأيام)', 'receipt', maxDays) + moveLogHTML(f('pay'), 'pay', 'سجل المرتبات (بالأيام)', 'users', maxDays);
+  return mvMatrix(f('wd'), 'جدول المسحوبات', 'hand-coins', maxDays) + expMatrix(f('exp'), 'جدول المصروفات', 'receipt', maxDays) + mvMatrix(f('pay'), 'جدول المرتبات', 'users', maxDays);
 };
 
 /* ===== تفاصيل الصنايعي (على الشاشة، بالأيام والورديات) ===== */
@@ -2435,36 +2457,45 @@ function wkRows(bid) {
     return { sh, qty: o.qty, nos: o.nos, rev: r2(o.rev), due: r2(o.due + w), wage: w, bonus: m.bonus, ded: m.ded, wd: m.wd, unp, net, done: unp === 0 && !m.bonus && !m.ded && !m.wd };
   }).reverse();
 }
+function wkTable(bid, rows, btns) {
+  const T = f => r2(rows.reduce((a, r) => a + r[f], 0)), red = 'color:var(--red)';
+  return `<div class="card"><div class="tscroll"><table><thead><tr><th>اليوم والتاريخ</th><th class="n">عدد الخدمات</th><th>أرقام الفواتير</th><th class="n">الدخل</th><th class="n">النسبة / المستحق</th><th class="n">الزيادة</th><th class="n">الخصم</th><th class="n">المسحوبات</th><th class="n">الصافي المتبقي</th>${btns ? '<th></th>' : ''}</tr></thead><tbody>${rows.map(r => `<tr><td><b>${dayLbl(shOpenTs(r.sh))}</b><br><small style="color:var(--mut)">${esc(shTitle(r.sh))} — ${fmtT(shOpenTs(r.sh))} إلى ${r.sh.open ? 'الآن' : fmtT(r.sh.closedAt)}</small></td><td class="n num">${r.qty}</td><td class="num" dir="ltr" style="text-align:start">${r.nos.size ? nosTxt(r.nos) : '-'}</td><td class="n num">${money(r.rev)}</td><td class="n num"><b>${money(r.due)}</b></td><td class="n num">${r.bonus ? '+ ' + money(r.bonus) : '-'}</td><td class="n num" style="${red}">${r.ded ? '- ' + money(r.ded) : '-'}</td><td class="n num" style="${red}">${r.wd ? '- ' + money(r.wd) : '-'}</td><td class="n num">${r.done ? '<span class="chip g">حُوسب</span>' : '<b>' + money(r.net) + '</b>'}</td>${btns ? `<td class="n">${r.done ? '' : `<button class="btn sm ok" data-act="wsettle:${esc(bid)}:${esc(r.sh.id)}">${ic('hand-coins')}محاسبة</button>`}</td>` : ''}</tr>`).join('')}<tr style="background:var(--glassbg)"><td><b>الإجمالي</b></td><td class="n num"><b>${T('qty')}</b></td><td></td><td class="n num"><b>${money(T('rev'))}</b></td><td class="n num"><b>${money(T('due'))}</b></td><td class="n num"><b>${T('bonus') ? '+ ' + money(T('bonus')) : '-'}</b></td><td class="n num"><b>${T('ded') ? '- ' + money(T('ded')) : '-'}</b></td><td class="n num"><b>${T('wd') ? '- ' + money(T('wd')) : '-'}</b></td><td class="n num"><b>${money(T('net'))}</b></td>${btns ? '<td></td>' : ''}</tr></tbody></table></div></div>`;
+}
 function drawWkDetail() {
   const bid = wkDet, b = S.barbers.find(x => x.id === bid); if (!b) { wkDet = ''; return drawWork(); }
-  const rows = wkRows(bid), tot = settlePlan(bid, ''), paid = r2(sum(S.payouts.filter(p => p.barber === bid), 'net'));
-  const T = f => r2(rows.reduce((a, r) => a + r[f], 0));
-  const k = (l, v, cl) => `<div class="kpi" style="padding:12px 16px"><small>${l}</small><b class="num" style="font-size:20px;${cl || ''}">${v}</b></div>`, red = 'color:var(--red);-webkit-text-fill-color:var(--red)';
-  $('#rOut').innerHTML = `<div class="tools" style="margin-top:0"><button class="btn" data-act="wback">${ic('arrow-right')}رجوع</button><b style="font-size:18px">${esc(b.name)}</b><span class="chip">${isDaily(b) ? 'يومية ' + money(b.daily) + ' ج.م لكل وردية' : 'نسبة ' + pctTxt(barberPct(bid))}</span></div>
-    <div class="grid3" style="margin-bottom:14px">${k('عدد الخدمات', T('qty'))}${k('الدخل الذي دخله للمكان', money(T('rev')) + ' ج.م')}${k('إجمالي مستحقه', money(T('due')) + ' ج.م')}${k('زيادات معلّقة', '+ ' + money(T('bonus')))}${k('خصومات معلّقة', '- ' + money(T('ded')), T('ded') ? red : '')}${k('مسحوبات معلّقة', '- ' + money(T('wd')), T('wd') ? red : '')}${k('ما سبق صرفه له', money(paid) + ' ج.م')}${k('المتبقي له الآن', money(tot.net) + ' ج.م')}</div>
-    ${rows.length ? `<div class="card"><div class="tscroll"><table><thead><tr><th>اليوم / الوردية</th><th>من — إلى</th><th class="n">الخدمات</th><th>الفواتير</th><th class="n">الدخل</th><th class="n">المستحق</th><th class="n">زيادة</th><th class="n">خصم</th><th class="n">سحب</th><th>الحالة</th><th></th></tr></thead><tbody>${rows.map(r => `<tr><td><b>${dayLbl(shOpenTs(r.sh))}</b><br><small style="color:var(--mut)">${esc(shTitle(r.sh))}</small></td><td style="font-size:12px">${fmtT(shOpenTs(r.sh))}<br>${r.sh.open ? '<span class="chip b">مفتوحة</span>' : fmtT(r.sh.closedAt) + (dayStr(r.sh.closedAt) !== shDayKey(r.sh) ? ' <small>(' + dayNm(r.sh.closedAt) + ')</small>' : '')}</td><td class="n num">${r.qty}</td><td class="num" dir="ltr" style="text-align:start">${r.nos.size ? nosTxt(r.nos) : '—'}</td><td class="n num">${money(r.rev)}</td><td class="n num"><b>${money(r.due)}</b></td><td class="n num">${r.bonus ? '+ ' + money(r.bonus) : '—'}</td><td class="n num">${r.ded ? '- ' + money(r.ded) : '—'}</td><td class="n num">${r.wd ? '- ' + money(r.wd) : '—'}</td><td>${r.done ? `<span class="chip g">${ic('check')}تمت المحاسبة</span>` : `<span class="chip y">متبقي ${money(r.net)}</span>`}</td><td class="n">${r.done ? '' : `<button class="btn sm ok" data-act="wsettle:${esc(bid)}:${esc(r.sh.id)}">${ic('hand-coins')}محاسبة</button>`}</td></tr>`).join('')}</tbody></table></div></div>
-    <div class="alertbox info" style="margin-top:10px"><span>رقم الفاتورة يبدأ من 1 في كل وردية، فالأرقام أعلاه تخص الوردية المكتوبة في نفس السطر.</span></div>
-    <div class="tools"><button class="btn pri" ${tot.can ? '' : 'disabled'} data-act="wsettle:${esc(bid)}:">${ic('hand-coins')}محاسبة الإجمالي (${money(tot.net)} ج.م)</button></div>` : '<div class="card"><div class="empty">لا توجد أي أعمال لهذا الصنايعي</div></div>'}`;
+  const rows = wkRows(bid).reverse(), tot = settlePlan(bid, ''), paid = r2(sum(S.payouts.filter(p => p.barber === bid), 'net'));
+  $('#rOut').innerHTML = `<div class="tools" style="margin-top:0"><button class="btn" data-act="wback">${ic('arrow-right')}رجوع</button><b style="font-size:18px">${esc(b.name)}</b><span class="chip">${isDaily(b) ? 'يومية ' + money(b.daily) + ' ج.م لكل وردية' : 'نسبة ' + pctTxt(barberPct(bid))}</span><span class="chip g">سبق صرفه: ${money(paid)} ج.م</span></div>
+    ${rows.length ? wkTable(bid, rows, true) + `<div class="tools"><button class="btn pri" ${tot.can ? '' : 'disabled'} data-act="wsettle:${esc(bid)}:">${ic('hand-coins')}محاسبة الإجمالي (${money(tot.net)} ج.م)</button></div>` : '<div class="card"><div class="empty">لا توجد أي أعمال لهذا الصنايعي</div></div>'}`;
 }
 
+/* ===== كروت مختصرة على الشاشة (بدون ورقة A4) ===== */
+const cardLine = (l, v, strong, col) => `<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed var(--bd);${strong ? 'font-weight:800;font-size:15px;' : ''}"><span style="color:var(--mut)">${l}</span><span class="num" style="${col ? 'color:' + col : ''}">${v}</span></div>`;
+const infoCard = (title, icon, html) => { openForm(title, icon, html, () => true, 'إغلاق'); const c = $('#fBody [data-close]'); if (c) c.style.display = 'none'; };
+function wkPreview() {
+  const sc = repFrom, sh = sc ? shById(sc) : null;
+  const html = S.barbers.map(b => { const rows = wkRows(b.id).filter(r => !sc || r.sh.id === sc).reverse(); return rows.length ? `<h4 style="margin:12px 0 6px">${esc(b.name)} <small style="color:var(--mut)">${isDaily(b) ? 'يومية ' + money(b.daily) : 'نسبة ' + pctTxt(barberPct(b.id))}</small></h4>${wkTable(b.id, rows, false)}` : ''; }).join('');
+  infoCard('كشف الصنايعية' + (sh ? ' — ' + shTitle(sh) : ''), 'users', html || '<div class="empty">لا توجد أعمال</div>');
+}
+
+const shNetP = sh => { const sf = repFrom, st = repTo, tab = repTab; repFrom = repTo = sh.id; if (repTab === 'dash') repTab = 'shifts'; try { const d = shDayKey(sh); return pnl(d, d); } finally { repFrom = sf; repTo = st; repTab = tab; } };
 /* ===== ملخص الوردية حتى صافي الربح (سواء حُوسب الصنايعية أم لا) ===== */
 function shiftSummary(id) {
   const sh = shById(id); if (!sh) return;
-  const sf = repFrom, st = repTo, tab = repTab; let P, wk;
+  const sf = repFrom, st = repTo, tab = repTab; let P;
   repFrom = repTo = id; if (repTab === 'dash') repTab = 'shifts';
   try { const d = shDayKey(sh); P = pnl(d, d); } finally { repFrom = sf; repTo = st; repTab = tab; }
-  const D = shiftData(sh), heads = P.heads;
-  const wrows = D.wk.map(x => { x = { ...x, unpaid: r2(x.due - x.paidDue) }; const b = S.barbers.find(q => q.id === x.id), dly = isDaily(b) && dailyShifts(b).some(q => q.id === sh.id), wage = dly ? (+b.daily || 0) : 0; return [`<b>${esc(barberName(x.id))}</b>`, x.heads, money(x.rev), money(x.due), dly ? money(wage) : '—', money(r2(x.due + wage)), (x.unpaid > 0 || (dly && !paidShiftSet(x.id).has(sh.id))) ? 'لم يُحاسَب' : 'حُوسب']; });
-  S.barbers.filter(b => isDaily(b) && dailyShifts(b).some(q => q.id === sh.id) && !D.wk.some(x => x.id === b.id)).forEach(b => wrows.push([`<b>${esc(b.name)}</b>`, 0, '0', '0', money(b.daily), money(b.daily), paidShiftSet(b.id).has(sh.id) ? 'حُوسب' : 'لم يُحاسَب']));
-  const html = a4HTML({ title: `ملخص ${shTitle(sh)}`, info: [['اليوم', dayLbl(shOpenTs(sh))], ['من', fmtT(shOpenTs(sh))], ['إلى', sh.open ? 'مفتوحة' : fmtT(sh.closedAt)], ['الكاشير', esc(sh.cashier || '—')]],
-    sum: [['عدد الفواتير', String(P.invs.length)], ['عدد الرؤوس', String(heads)], ['إجمالي الإيراد (قبل الخصم)', cur(P.gross)], ['صافي الربح', cur(P.net), 1]],
-    body: `<h3 class="sec">من الإيراد إلى صافي الربح</h3>${a4Table(['البند', 'المبلغ'], pnlRows(P).map(x => [x[2] === 1 ? `<b>${x[0]}</b>` : x[0], x[2] === 1 ? `<b>${money(x[1])}</b>` : money(x[1])]))}
-      <h3 class="sec">نقدية الدرج</h3>${a4Table(['البند', 'المبلغ'], [['النقدي المحصَّل', money(D.cash)], ['التحويلات', money(D.xfer)], ['مصروفات المحل', '- ' + money(D.ex)], ['مسحوبات الصنايعية', '- ' + money(D.wd)], ['مرتبات الصنايعية المسلَّمة من الدرج', '- ' + money(D.py)], ['المتوقع في الدرج', money(D.exp)], ['الفعلي', D.act == null ? '—' : money(D.act)]])}
-      <h3 class="sec">حسابات الصنايعية في الوردية</h3>${wrows.length ? a4Table(['الصنايعي', 'الخدمات', 'الدخل', 'أرباحه', 'يومية', 'المستحق', 'الحالة'], wrows) : '<div class="note">لا توجد حسابات.</div>'}
-      <div class="note" style="margin-top:6px">صافي الربح هنا يحسب مستحق الصنايعية كاملًا سواء حُوسبوا أو لا.</div>` });
-  showPreview('ملخص ' + shTitle(sh), html, 'a4');
+  const D = shiftData(sh), red = 'var(--red)';
+  const wk = D.wk.map(x => { const b = S.barbers.find(q => q.id === x.id), dly = b && isDaily(b) && dailyShifts(b).some(q => q.id === sh.id), wage = dly ? (+b.daily || 0) : 0; return `<div style="padding:6px 0;border-bottom:1px dashed var(--bd);font-size:13.5px"><b>${esc(barberName(x.id))}</b> — خدمات <b class="num">${x.heads}</b> · دخل <b class="num">${money(x.rev)}</b> · مستحق <b class="num">${money(r2(x.due + wage))}</b> ${(r2(x.due - x.paidDue) > 0 || (dly && !paidShiftSet(x.id).has(sh.id))) ? '<span class="chip y">لم يُحاسَب</span>' : '<span class="chip g">حُوسب</span>'}</div>`; }).join('');
+  const L = (l, v, st2, col) => cardLine(l, v, st2, col);
+  infoCard('ملخص ' + shTitle(sh), 'file-text', `<div class="card" style="padding:14px 16px">
+    <div style="font-weight:800;font-size:16px;margin-bottom:2px">${dayLbl(shOpenTs(sh))}</div><div style="color:var(--mut);font-size:13px;margin-bottom:8px">من ${fmtT(shOpenTs(sh))} إلى ${sh.open ? 'الآن (مفتوحة)' : fmtT(sh.closedAt)}${sh.cashier ? ' — ' + esc(sh.cashier) : ''}</div>
+    ${L('عدد الفواتير', P.invs.length)}${L('إجمالي الرؤوس', P.heads)}
+    ${L('إجمالي الإيراد (قبل خصم العملاء)', money(P.gross), 1)}${L('يُخصم: خصومات العملاء', '- ' + money(P.disc), 0, P.disc ? red : '')}${L('المحصَّل', money(P.revenue))}
+    ${L('يُخصم: تكلفة المنتجات', '- ' + money(P.cogs))}${L('يُخصم: نصيب الصنايعية', '- ' + money(P.shares))}${P.boT ? L('يُخصم: زيادات الصنايعية', '- ' + money(P.boT)) : ''}${L('يُخصم: مصروفات المحل', '- ' + money(P.expT))}${P.ded ? L('يُضاف: خصومات من الصنايعية', money(P.ded)) : ''}${P.short ? L('يُخصم: عجز الدرج', '- ' + money(P.short)) : ''}${P.over ? L('يُضاف: زيادة الدرج', money(P.over)) : ''}
+    ${L('صافي الربح', money(P.net) + ' ج.م', 1, P.net < 0 ? red : '')}
+    <div style="font-size:12px;color:var(--mut);margin:4px 0 8px">صافي الربح يحسب مستحق الصنايعية كاملًا سواء حُوسبوا أو لا.</div>
+    ${wk ? `<b>الصنايعية</b>${wk}` : ''}</div>`);
 }
-
 const wkNosLine = (bid, sc) => { const L = wkRows(bid).filter(r => r.nos.size && (!sc || r.sh.id === sc)).slice(0, 4); return L.length ? `<div style="font-size:12px;color:var(--mut);margin:0 0 8px;line-height:1.7">الفواتير: ${L.map(r => `<span style="white-space:nowrap">${r.sh.open ? 'الحالية' : '#' + r.sh.no}: <b dir="ltr" class="num">${nosTxt(r.nos)}</b></span>`).join(' · ')}</div>` : ''; };
 /* ---------- الأجهزة + تعارض أرقام الفواتير + بدء وردية الكاشير ---------- */
 const DEV = (() => { let d = null; try { d = JSON.parse(localStorage.getItem('as_dev') || 'null'); } catch (e) {} if (!d || !d.id) { d = { id: uid(), no: 0, name: '' }; try { localStorage.setItem('as_dev', JSON.stringify(d)); } catch (e) {} } return d; })();
