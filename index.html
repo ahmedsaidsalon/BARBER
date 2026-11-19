@@ -936,7 +936,7 @@ const defState = () => ({
 let S = defState();
 const newDraft = (name = '', phone = '') => ({ id: uid(), name, phone, items: [], disc: '', pay: { mode: 'one', one: '', parts: {} } });
 const custLabel = c => c.name || 'عميل بدون اسم';
-const nextNo = () => S.counters.inv + 1;
+const nextNo = () => S.invoices.reduce((m, i) => i.shift ? m : Math.max(m, +i.no || 0), 0) + 1;
 const pmById = id => S.payMethods.find(p => p.id === id);
 
 /* ---------- Persistence: LocalStorage + IndexedDB mirror ---------- */
@@ -1251,7 +1251,7 @@ function doPrintInvoice(pays, withPrint = true) {
   const t = curTotals(), c = S.cur, k = t.sub > 0 ? t.total / t.sub : 1;
   const items = c.items.map(i => { const rev = r2(i.price * i.qty * k); if (i.kind === 'p') return { kind: 'p', ref: i.ref, name: i.name, price: i.price, qty: i.qty, cost: +i.cost || 0, barber: '', barberName: '', pct: 0, rev, share: 0, paid: null }; const pct = barberPct(i.barber); return { name: i.name, price: i.price, qty: i.qty, barber: i.barber, barberName: barberName(i.barber), pct, rev, share: shareOf(rev, pct), paid: null }; });
   items.forEach(x => { if (x.kind === 'p') { const g = S.products.find(q => q.id === x.ref); if (g) g.stock = Math.max(0, (+g.stock || 0) - x.qty); } });
-  const inv = { id: uid(), dev: DEV.id, no: ++S.counters.inv, sn: (S.counters.shift || 0) + 1, ts: Date.now(), cust: c.name.trim(), phone: digits(c.phone), cashier: S.settings.cashier || '', items, sub: t.sub, disc: t.disc, total: t.total, pays, shift: null, printed: withPrint };
+  const inv = { id: uid(), dev: DEV.id, no: (S.counters.inv = nextNo()), sn: (S.counters.shift || 0) + 1, ts: Date.now(), cust: c.name.trim(), phone: digits(c.phone), cashier: S.settings.cashier || '', items, sub: t.sub, disc: t.disc, total: t.total, pays, shift: null, printed: withPrint };
   inv.branch = curBranch; inv.code = invCode(inv); S.invoices.push(inv); recordCustomer(inv); S.served.push({ t: inv.ts, name: inv.cust || ('فاتورة #' + inv.no), how: withPrint ? 'invoice' : 'saved', no: inv.no });
   if (S.served.length > 300) S.served.splice(0, S.served.length - 300);
   save();
@@ -2500,6 +2500,14 @@ const wkNosLine = (bid, sc) => { const L = wkRows(bid).filter(r => r.nos.size &&
 /* ---------- الأجهزة + تعارض أرقام الفواتير + بدء وردية الكاشير ---------- */
 const DEV = (() => { let d = null; try { d = JSON.parse(localStorage.getItem('as_dev') || 'null'); } catch (e) {} if (!d || !d.id) { d = { id: uid(), no: 0, name: '' }; try { localStorage.setItem('as_dev', JSON.stringify(d)); } catch (e) {} } return d; })();
 const DEVS = {}; /* سجل الأجهزة من السحابة */
+const APP_VER = 'v4.0.0';
+/* آخر تحديثات هذا الجهاز: آخر فاتورة / وردية / تحديث عام للبيانات */
+function devStat() {
+  const li = S.invoices.reduce((a, i) => !a || i.ts > a.ts ? i : a, null), ls = S.shifts.reduce((a, x) => !a || x.closedAt > a.closedAt ? x : a, null);
+  const upd = Math.max(0, ...S.invoices.map(i => i.ts), ...S.shifts.map(x => x.closedAt || 0), ...S.moves.map(m => m.ts), ...S.payouts.map(x => x.ts));
+  return { li: li ? { no: li.no, ts: li.ts, sn: li.sn || 0 } : null, ls: ls ? { no: ls.no, ts: ls.closedAt } : null, upd, ver: APP_VER, openSh: csOpen() };
+}
+const stLine = (o, f) => o ? `${f(o)}<br><small style="color:var(--mut)">${dayNm(o.ts)} ${fmtD(o.ts)} ${fmtT(o.ts)}</small>` : '-';
 const devSave = () => { try { localStorage.setItem('as_dev', JSON.stringify(DEV)); } catch (e) {} };
 const devNo = id => id === DEV.id ? (DEV.no || 1) : (DEVS[id] && DEVS[id].no) || 0;
 const devName = id => !id ? 'قبل تسجيل الأجهزة' : id === DEV.id ? 'جهاز ' + (DEV.no || 1) : (DEVS[id] ? 'جهاز ' + (DEVS[id].no || '؟') : 'جهاز غير مسجّل');
@@ -2542,17 +2550,18 @@ function devType() {
   return { kind: tab ? 'تابلت' : mob ? 'هاتف' : 'كمبيوتر', os, br, app };
 }
 const devTypeTxt = d => d && d.kind ? `${d.kind}${d.os ? ' — ' + d.os : ''}${d.br ? ' / ' + d.br : ''}${d.app ? ' (تطبيق مثبّت)' : ' (متصفح)'}` : 'غير معروف';
+const devStatCells = st => st ? `<td>${stLine(st.li, o => '#' + o.no + (o.sn ? ' (وردية ' + o.sn + ')' : ''))}</td><td>${stLine(st.ls, o => 'وردية #' + o.no)}</td><td>${st.upd ? `${dayNm(st.upd)} ${fmtD(st.upd)}<br><small style="color:var(--mut)">${fmtT(st.upd)}</small>` : '-'}</td><td class="num">${esc(st.ver || '-')}</td>` : '<td>-</td><td>-</td><td>-</td><td>-</td>';
 function drawDev() {
   const box = $('#repBody'); if (!box || repTab !== 'dev' || !$('#v-rep').classList.contains('on')) return;
   const ids = [DEV.id, ...Object.keys(DEVS).filter(k => k !== DEV.id && !DEVS[k].deleted)], open = csOpen();
   const row = id => { const me = id === DEV.id, act = me || devActive(id), d = me ? devType() : (DEVS[id] || {}).type;
-    return `<tr><td><b>${esc(devName(id))}</b>${me ? ` <span class="chip g">${ic('monitor-smartphone')}هذا الجهاز</span>` : ''}</td><td>${esc(devTypeTxt(d))}</td><td>${act ? `<span class="chip b">${ic('wifi')}مفتوح الآن</span>` : '<span class="chip">غير متصل</span>'}</td><td>${me ? 'الآن' : lastSeen((DEVS[id] || {}).last)}</td><td class="n"></td></tr>`; };
+    return `<tr><td><b>${esc(devName(id))}</b>${me ? ` <span class="chip g">${ic('monitor-smartphone')}هذا الجهاز</span>` : ''}</td><td>${esc(devTypeTxt(d))}</td><td>${act ? `<span class="chip b">${ic('wifi')}مفتوح الآن</span>` : '<span class="chip">غير متصل</span>'}</td><td>${me ? 'الآن' : lastSeen((DEVS[id] || {}).last)}</td>${devStatCells(me ? devStat() : (DEVS[id] || {}).stat)}</tr>`; };
   box.innerHTML = `<div class="card pad" style="margin-bottom:14px"><div class="cut" style="margin:0 0 8px">${ic('lock')}<span>وردية الكاشير</span></div>
     <div class="line" style="padding:6px 0"><span>الحالة</span><b>${open ? `مفتوحة${S.cshift && S.cshift.at ? ' منذ <span dir="ltr" class="num">' + fmtDT(S.cshift.at) + '</span>' : ''}` : 'مغلقة — بانتظار أن يضغط الكاشير «بدء الوردية»'}</b></div>
     <div class="tools" style="margin:8px 0 0"><button class="btn ${open ? '' : 'pri'}" data-dv="start" ${open ? 'disabled' : ''}>${ic('play')}بدء وردية الكاشير</button></div></div>
     <div class="card"><h3>${ic('monitor-smartphone')}الأجهزة المتصلة بالحساب <small style="margin-inline-start:auto" class="num">${ids.filter(i => i === DEV.id || devActive(i)).length} مفتوح الآن</small></h3>
-      <div class="tscroll"><table><thead><tr><th>الجهاز</th><th>النوع</th><th>الحالة</th><th>آخر ظهور</th><th class="n"></th></tr></thead><tbody>${ids.map(row).join('')}</tbody></table></div>
-      <p class="note" style="margin:8px 12px 12px">القائمة للعرض فقط: لا يوجد دمج للبيانات، وكل جهاز يحتفظ بفواتيره وورديّاته وحساباته وحده. تحتاج تسجيل الدخول بالحساب على الجهاز ليظهر هنا.</p></div>`;
+      <div class="tscroll"><table><thead><tr><th>الجهاز</th><th>النوع</th><th>الحالة</th><th>آخر ظهور</th><th>آخر فاتورة</th><th>آخر وردية مقفولة</th><th>آخر تحديث للبيانات</th><th>إصدار التطبيق</th></tr></thead><tbody>${ids.map(row).join('')}</tbody></table></div>
+      <p class="note" style="margin:8px 12px 12px">الأجهزة المسجّلة بنفس الحساب تتزامن فورًا طالما متصلة بالإنترنت، وما يُسجَّل على جهاز يظهر على الباقي. أي جهاز غير مسجّل الدخول أو بدون إنترنت يبقى على نسخته إلى أن يتصل ثم يتزامن تلقائيًا.</p></div>`;
 }
 document.addEventListener('click', e => { const b = e.target.closest('[data-dv]'); if (!b) return; const [k, id] = b.dataset.dv.split(':'); if (k === 'start') startCashierShift(); else if (k === 'ren') devRename(id); });
 setInterval(() => { if (curView === 'mgr' && repTab === 'dev') drawDev(); applyGate(); }, 30000);
@@ -2560,7 +2569,7 @@ setInterval(() => { if (curView === 'mgr' && repTab === 'dev') drawDev(); applyG
 /* ----- نبض الجهاز في السحابة ----- */
 async function clBeat() {
   if (!CL.user || !CL.fb) return;
-  try { const { F, db } = CL.fb; const L = ownInv(DEV.id); await F.setDoc(F.doc(db, 'salons', 'main', 'devices', DEV.id), { no: DEV.no || 1, name: DEV.name || '', last: Date.now(), inv: L.length, lastNo: L.reduce((m, i) => Math.max(m, i.no), 0), type: devType(), deleted: false }, { merge: true }); } catch (e) {}
+  try { const { F, db } = CL.fb; const L = ownInv(DEV.id); await F.setDoc(F.doc(db, 'salons', 'main', 'devices', DEV.id), { no: DEV.no || 1, name: DEV.name || '', last: Date.now(), inv: L.length, lastNo: L.reduce((m, i) => Math.max(m, i.no), 0), type: devType(), stat: devStat(), deleted: false }, { merge: true }); } catch (e) {}
 }
 let devSeen = {}, devFirst = true;
 function devOnSnap(snap) {
@@ -2584,6 +2593,13 @@ window.addEventListener('storage', e => {
   }
   try { const mine = S.cur; hydrate(e.newValue); if (mine) S.cur = mine; lastSaved = e.newValue; clRefreshUI(); } catch (er) {}
 });
+/* نافذة المزامنة: آخر تحديثات الفواتير والورديات والتطبيق على كل الأجهزة */
+async function syncInfo() {
+  try { await clBeat(); } catch (e) {}
+  const ids = [DEV.id, ...Object.keys(DEVS).filter(k => k !== DEV.id && !DEVS[k].deleted)];
+  const rows = ids.map(id => { const me = id === DEV.id, st = me ? devStat() : (DEVS[id] || {}).stat; return `<tr><td><b>${esc(devName(id))}</b>${me ? ' <span class="chip g">هذا الجهاز</span>' : ''}</td>${devStatCells(st)}<td>${me ? 'الآن' : lastSeen((DEVS[id] || {}).last)}</td></tr>`; }).join('');
+  infoCard('آخر التحديثات على الأجهزة', 'cloud', `<div class="tscroll"><table><thead><tr><th>الجهاز</th><th>آخر فاتورة</th><th>آخر وردية مقفولة</th><th>آخر تحديث للبيانات</th><th>إصدار التطبيق</th><th>آخر ظهور</th></tr></thead><tbody>${rows}</tbody></table></div><div class="note" style="margin-top:8px">المزامنة فورية للأجهزة المتصلة. آخر استلام من جهاز آخر على هذا الجهاز: ${CL.recv ? dayNm(CL.recv) + ' ' + fmtD(CL.recv) + ' ' + fmtT(CL.recv) : 'لم يصل شيء بعد'}.</div>`);
+}
 /* ---------- Firebase: تسجيل الدخول بحساب المالك + مزامنة Firestore ---------- */
 const FB_CFG = { apiKey: 'AIzaSyArboNLzbe-3tpyZlAm1Z40_InDPcWwVoc', authDomain: 'ahmed-said-salon.firebaseapp.com', projectId: 'ahmed-said-salon', storageBucket: 'ahmed-said-salon.firebasestorage.app', messagingSenderId: '64990376037', appId: '1:64990376037:web:8d9f0b212e7a53be6b168c', measurementId: 'G-7ZPDE53CVZ' };
 const OWNER_EMAIL = 'ahmedsaidsalon@gmail.com', FB_V = '10.14.1', FB_CDN = `https://www.gstatic.com/firebasejs/${FB_V}/`;
@@ -2599,7 +2615,7 @@ const cid = k => encodeURIComponent(k).replace(/\./g, '%2E');
 
 function clUI() {
   const b = $('#syncBtn'); if (!b) return;
-  b.dataset.st = CL.st; b.title = { off: 'غير متصل بالحساب — اضغط لتسجيل الدخول', wait: 'جارٍ الاتصال…', sync: 'جارٍ الاتصال…', ok: 'متصل — الأجهزة المفتوحة تظهر في تبويب الأجهزة', err: 'تعذّر الاتصال — ' + CL.err }[CL.st] || '';
+  b.dataset.st = CL.st; b.title = { off: 'غير متصل بالحساب — اضغط لتسجيل الدخول', wait: 'جارٍ الاتصال…', sync: 'جارٍ الاتصال…', ok: 'متصل — المزامنة الفورية تعمل (اضغط لعرض آخر التحديثات)', err: 'تعذّر الاتصال — ' + CL.err }[CL.st] || '';
   const c = $('#clCard'); if (c) c.outerHTML = cloudCard();
 }
 function clSet(st, err) { CL.st = st; CL.err = err || ''; if (st === 'ok') { CL.last = Date.now(); lsSet('as_cl_last', CL.last); } clUI(); }
@@ -2663,7 +2679,7 @@ async function clAccept(user, fromGate) {
 /* ----- بدء المزامنة ----- */
 let clUnsubs = [];
 async function clStart() {
-  /* لا توجد مزامنة بيانات (فواتير/ورديات/إعدادات): كل جهاز مستقل ببياناته. السحابة تُستخدم فقط لإظهار الأجهزة المتصلة وتزامن كلمة المرور وسجل الأمان */
+  /* مزامنة فورية طالما الجهاز مسجّل الدخول ومتصل بالإنترنت؛ بدون تسجيل دخول يبقى الجهاز على نسخته */
   if (!CL.user || clUnsubs.length || CL.go) return; CL.go = true;
   const { F, db } = await clLoad(); clSet('ok');
   const onErr = e => { clSet('err', (e && e.code) || 'خطأ'); };
@@ -2673,6 +2689,10 @@ async function clStart() {
     if (!snap.exists()) { clSecPush(true); return; }
     if (snap.metadata.hasPendingWrites) return; clApplySec(snap.data());
   }, () => {}));
+  /* مزامنة فورية: الفواتير والورديات والمحاسبات والحركات + إعدادات الصالون */
+  Object.keys(COLS).forEach(n => clUnsubs.push(F.onSnapshot(F.collection(db, 'salons', 'main', n), snap => clPull(n, snap), onErr)));
+  clUnsubs.push(F.onSnapshot(F.doc(db, 'salons', 'main', 'meta', 'state'), snap => { if (snap.exists() && !snap.metadata.hasPendingWrites) { clApplyMeta(snap.data()); clRefreshLite(); } }, onErr));
+  setTimeout(() => clSchedule(300), 1500);
   /* استرجاع سجل الأمان من السحابة لو اتمسح محلياً */
   clUnsubs.push(F.onSnapshot(F.collection(db, 'salons', 'main', 'seclog'), snap => {
     let ch = false; snap.docChanges().forEach(c => { if (c.type === 'removed') return; const d = c.doc.data(); if (!SEC.log.some(l => l.id === c.doc.id)) { SEC.log.push({ id: c.doc.id, t: d.t, type: d.type, note: d.note }); ch = true; } });
@@ -2743,7 +2763,6 @@ async function clPushMeta(force) {
   await F.setDoc(F.doc(db, 'salons', 'main', 'meta', 'state'), { json: j, ts: CL.mts, by: OWNER_EMAIL }); CL.mhash = h; lsSet('as_cl_mh', h);
 }
 async function clPush() {
-  return; /* مزامنة البيانات ملغاة */
   if (!CL.user || !CL.fb || !CL.go || CL.applying) return;
   try {
     const { F, db } = CL.fb; clSet('sync'); const ops = [], seen = {};
@@ -2766,7 +2785,36 @@ async function clPush() {
     lsSet('as_cl_h', JSON.stringify(CL.hashes)); clSet('ok');
   } catch (e) { clSet('err', (e && e.code) || 'خطأ'); clearTimeout(CL.retry); CL.retry = setTimeout(() => { if (CL.go) clSchedule(100); }, 15000); }
 }
-SYNC.push = () => {};
+SYNC.push = () => { if (CL.user && CL.go && !CL.applying) clSchedule(1200); };
+window.addEventListener('online', () => { if (CL.user && CL.go) clSchedule(300); });
+
+/* ----- الاستلام من السحابة: دمج لا استبدال (الأحدث لنفس العنصر يكسب، ولا يضيع عنصر جديد) ----- */
+CL.first = {};
+function clRefreshLite() {
+  try { $('#curNo').textContent = nextNo(); renderStats(); } catch (e) {}
+  const on = id => $(id) && $(id).classList.contains('on');
+  try { if (on('#v-out')) renderOut(); if (on('#v-rep')) drawOut(); } catch (e) {}
+  try { if (typeof clUI === 'function') clUI(); } catch (e) {}
+}
+function clPull(n, snap) {
+  let arr = COLS[n](), ch = false;
+  snap.docChanges().forEach(c => {
+    const id = c.doc.id, key = n + '/' + id; if (c.doc.metadata.hasPendingWrites) return;
+    const i = arr.findIndex(x => x && x.id === id);
+    if (c.type === 'removed') { if (i >= 0) { arr.splice(i, 1); ch = true; } delete CL.hashes[key]; return; }
+    const j = (c.doc.data() || {}).json; if (!j) return; const h = hsh(j); if (CL.hashes[key] === h) return;
+    let o; try { o = JSON.parse(j); } catch (e) { return; } if (!o || o.id !== id) return;
+    if (i >= 0) { if (hsh(JSON.stringify(arr[i])) !== h) { arr[i] = o; ch = true; } } else { arr.push(o); ch = true; }
+    CL.hashes[key] = h;
+  });
+  /* أول لقطة كاملة من السيرفر: ما سبقت مزامنته ولم يعد موجودًا في السحابة يعني أن جهازًا آخر حذفه */
+  if (!CL.first[n] && !snap.metadata.fromCache) {
+    CL.first[n] = true; const ids = new Set(snap.docs.map(d => d.id)), gone = arr.filter(x => x && CL.hashes[n + '/' + x.id] && !ids.has(x.id));
+    if (gone.length && gone.length <= 3 || gone.length && gone.length <= arr.length * 0.3) { const gs = new Set(gone.map(x => x.id)); const keep = arr.filter(x => !gs.has(x.id)); arr.length = 0; keep.forEach(x => arr.push(x)); gone.forEach(x => delete CL.hashes[n + '/' + x.id]); ch = true; }
+  }
+  if (ch) { const k = n === 'shifts' ? 'closedAt' : 'ts'; arr.sort((a, b) => (a[k] || 0) - (b[k] || 0)); lsSet('as_cl_h', JSON.stringify(CL.hashes)); CL.recv = Date.now(); flushSaveLocal(); CL.applying = true; try { clRefreshLite(); } finally { CL.applying = false; } }
+  clSet('ok');
+}
 
 /* ----- بطاقة السحابة في الإعدادات ----- */
 function cloudCard() {
@@ -2774,7 +2822,7 @@ function cloudCard() {
   return `<div class="card pad" id="clCard" style="margin:0"><div class="cut">${ic('cloud')}<span>الحساب والأجهزة المتصلة</span></div>
     <div class="grid3" style="margin:12px 0"><div class="kpi"><small>الحساب</small><b style="font-size:15px;-webkit-text-fill-color:var(--tx);color:var(--tx);background:none;direction:ltr;text-align:start">${esc(on ? CL.user.email : OWNER_EMAIL)}</b></div><div class="kpi"><small>الحالة</small><b style="font-size:20px">${stTxt}${CL.err ? ' — ' + esc(CL.err) : ''}</b></div><div class="kpi"><small>آخر اتصال</small><b style="font-size:20px" class="num">${CL.last ? fmtDT(CL.last) : '—'}</b></div></div>
     <div class="tools" style="margin:0">${on ? `<button class="btn red" data-cl="out">${ic('log-out')}تسجيل الخروج من الحساب</button>` : `<button class="btn pri" data-cl="in">${ic('cloud')}تسجيل الدخول بحساب Google</button>`}</div>
-    <p style="color:var(--mut);margin:10px 0 0;line-height:1.8;font-size:13px">لا يوجد دمج للبيانات بين الأجهزة: كل جهاز يحتفظ بفواتيره وورديّاته وحساباته مستقلة. الحساب يُستخدم فقط لإظهار الأجهزة المفتوحة ونوع كل جهاز (من تبويب «الأجهزة والوردية») ولتوحيد كلمة مرور المدير.</p></div>`;
+    <p style="color:var(--mut);margin:10px 0 0;line-height:1.8;font-size:13px">المزامنة فورية بين كل الأجهزة المسجّلة بهذا الحساب والمتصلة بالإنترنت: الفواتير والورديات والمحاسبات والمصروفات والمسحوبات والإعدادات. الجهاز غير المسجّل أو بدون إنترنت يعمل على نسخته ثم يتزامن عند الاتصال.</p></div>`;
 }
 function bindCloud() {
   document.addEventListener('click', async e => {
@@ -2784,7 +2832,7 @@ function bindCloud() {
       else if (k === 'out') { if (!(await requireAuth('أدخل كلمة المرور لتسجيل الخروج من حساب المزامنة'))) return; if (!(await confirmBox({ title: 'تسجيل الخروج', danger: true, ok: 'خروج', icon: 'log-out', body: 'سيتوقف رفع البيانات للسحابة وتُطلب بوابة الدخول من جديد. بيانات الجهاز لن تُمسح.' }))) return; clStop(); CL.user = null; try { const { Au, auth } = await clLoad(); await Au.signOut(auth); } catch (er) {} lsSet('as_auth', ''); clSet('off'); gateShow(); }
       return;
     }
-    if (e.target.closest('#syncBtn')) { if (!CL.user) { if (lsGet('as_auth') === '1') clInit(); else gateShow(); clSignIn(false); } else toast('لا توجد مزامنة بيانات — الأجهزة المتصلة تظهر في تبويب «الأجهزة والوردية»'); }
+    if (e.target.closest('#syncBtn')) { if (!CL.user) { if (lsGet('as_auth') === '1') clInit(); else gateShow(); clSignIn(false); } else syncInfo(); }
   });
   window.addEventListener('online', () => { if (lsGet('as_auth') === '1') { if (CL.user && CL.go) setTimeout(() => clSchedule(100), 800); else if (CL.user) clAsk(); else clInit(); } });
   window.addEventListener('offline', () => { if (CL.st !== 'off') clSet('off'); });
